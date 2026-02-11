@@ -69,6 +69,25 @@
               </div>
             </div>
 
+            <!-- Projects -->
+            <div v-if="getUserProjects(usr.email).length" class="admin-user-projects">
+              <div class="admin-user-projects-label">
+                <q-icon name="folder" size="13px" />
+                <span>Projects</span>
+              </div>
+              <div class="admin-user-projects-list">
+                <span v-for="proj in getUserProjects(usr.email)" :key="proj.id" class="admin-project-chip">
+                  {{ proj.name }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="admin-user-projects admin-user-projects-empty">
+              <div class="admin-user-projects-label">
+                <q-icon name="folder_off" size="13px" />
+                <span>ยังไม่ได้อยู่ในโปรเจคใด</span>
+              </div>
+            </div>
+
             <div class="admin-user-fields">
               <div class="admin-field">
                 <label class="admin-field-label">Role</label>
@@ -165,9 +184,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from 'stores/auth'
 import { useDepartmentsStore } from 'stores/departments'
+import { useProjectsStore } from 'stores/projects'
 
 const authStore = useAuthStore()
 const deptStore = useDepartmentsStore()
+const projectsStore = useProjectsStore()
 
 const activeTab = ref('users')
 const userSearch = ref('')
@@ -181,7 +202,8 @@ const editState = ref({}) // { [email]: { role, department } }
 onMounted(async () => {
   await Promise.all([
     authStore.fetchAllProfiles(),
-    deptStore.fetchDepartments()
+    deptStore.fetchDepartments(),
+    projectsStore.fetchAllProjects()
   ])
 
   // Initialize edit state for each user
@@ -221,6 +243,11 @@ const isUserChanged = (usr) => {
   const e = editState.value[usr.email || usr.id]
   if (!e) return false
   return e.role !== (usr.role || 'employee') || e.department !== (usr.department || '')
+}
+
+// Get projects a user belongs to
+const getUserProjects = (email) => {
+  return projectsStore.allProjects.filter(p => p.members && p.members.includes(email))
 }
 
 // Count users per department
@@ -499,6 +526,45 @@ const handleDeleteDept = async (dept) => {
   font-size: 0.72rem;
   color: #9ca3af;
   white-space: nowrap;
+}
+
+/* User Projects */
+.admin-user-projects {
+  margin-bottom: 12px;
+}
+
+.admin-user-projects-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b6c6f;
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
+.admin-user-projects-empty .admin-user-projects-label {
+  color: #4b5563;
+  margin-bottom: 0;
+}
+
+.admin-user-projects-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-project-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(92, 156, 230, 0.1);
+  color: #7db8f0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: 1px solid rgba(92, 156, 230, 0.15);
 }
 
 .admin-user-fields {

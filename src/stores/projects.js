@@ -16,6 +16,7 @@ import { useAuthStore } from './auth'
 
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref([])
+  const allProjects = ref([])
   const currentProject = ref(null)
   const loading = ref(false)
   const error = ref(null)
@@ -74,6 +75,16 @@ export const useProjectsStore = defineStore('projects', () => {
       error.value = err.message
       console.error('Error listening to projects:', err)
     })
+  }
+
+  // Fetch ALL projects (for admin use)
+  const fetchAllProjects = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'projects'))
+      allProjects.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+    } catch (err) {
+      console.error('Error fetching all projects:', err)
+    }
   }
 
   // Create new project
@@ -193,10 +204,12 @@ export const useProjectsStore = defineStore('projects', () => {
 
   return {
     projects,
+    allProjects,
     currentProject,
     loading,
     error,
     fetchProjects,
+    fetchAllProjects,
     subscribeToProjects,
     createProject,
     updateProject,
