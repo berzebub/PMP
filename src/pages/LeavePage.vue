@@ -1,0 +1,1416 @@
+<template>
+  <q-page class="leave-page">
+    <div class="leave-container">
+      <!-- Header -->
+      <div class="leave-page-header">
+        <div class="leave-header-left">
+          <div class="leave-header-icon">
+            <q-icon name="event_busy" size="26px" />
+          </div>
+          <div>
+            <div class="leave-header-title">Leave Request</div>
+            <div class="leave-header-subtitle">ส่งใบลาและดูประวัติการลา</div>
+          </div>
+        </div>
+        <div class="leave-header-right">
+          <button class="leave-back-btn" @click="$router.back()">
+            <q-icon name="arrow_back" size="18px" />
+            <span>กลับ</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Approval Section (for head / hr / super_admin) -->
+      <div v-if="showApprovalSection" class="leave-card leave-approval-card">
+        <div class="leave-card-header">
+          <q-icon name="approval" size="18px" style="color: #ce93d8;" />
+          <span class="leave-card-title">รออนุมัติ</span>
+          <q-badge v-if="leaveStore.pendingApprovalCount > 0"
+            :label="leaveStore.pendingApprovalCount + ' รายการ'" class="leave-approval-badge" />
+          <div style="flex:1"></div>
+          <button class="leave-refresh-btn" :disabled="leaveStore.loading" @click="refreshApprovals" title="รีเฟรช">
+            <q-icon name="refresh" size="15px" :class="{ 'leave-spin': leaveStore.loading }" />
+          </button>
+          <div class="leave-role-badge">
+            <q-icon :name="authStore.roleLabels[authStore.profile.role]?.icon || 'person'" size="13px" />
+            <span>{{ authStore.roleLabels[authStore.profile.role]?.label || 'พนักงาน' }}</span>
+          </div>
+        </div>
+
+        <div class="leave-approval-list">
+          <div v-if="leaveStore.pendingApprovals.length === 0" class="leave-empty">
+            <q-icon name="check_circle_outline" size="40px" style="color: #2a2b2e;" />
+            <span>ไม่มีใบลารออนุมัติ</span>
+          </div>
+
+          <div v-for="leave in leaveStore.pendingApprovals" :key="leave.id" class="leave-approval-item">
+            <div class="leave-approval-item-top">
+              <div class="leave-approval-avatar">
+                <img v-if="authStore.getPhotoURL(leave.userId)" :src="authStore.getPhotoURL(leave.userId)" class="leave-approval-avatar-img" />
+                <span v-else>{{ leave.firstName?.charAt(0) || leave.userId?.charAt(0)?.toUpperCase() || 'U' }}</span>
+              </div>
+              <div class="leave-approval-info">
+                <div class="leave-approval-name">{{ leave.firstName }} {{ leave.lastName }}</div>
+                <div class="leave-approval-email">{{ leave.userId }}</div>
+              </div>
+              <div class="leave-history-status"
+                :style="{ color: getStatusInfo(leave.status).color, background: getStatusInfo(leave.status).color + '15' }">
+                <q-icon :name="getStatusInfo(leave.status).icon" size="13px" />
+                <span>{{ getStatusInfo(leave.status).label }}</span>
+              </div>
+            </div>
+
+            <div class="leave-approval-detail-row">
+              <div class="leave-approval-type">
+                <span>{{ getTypeInfo(leave.leaveType).icon }}</span>
+                <span>{{ getTypeInfo(leave.leaveType).label }}</span>
+              </div>
+              <div class="leave-approval-dates">
+                <q-icon name="date_range" size="13px" />
+                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
+                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+              </div>
+            </div>
+
+            <div v-if="leave.department" class="leave-approval-dept">
+              <q-icon name="business" size="13px" />
+              <span>{{ leave.department }}</span>
+            </div>
+
+            <div v-if="leave.details" class="leave-history-details">
+              {{ leave.details }}
+            </div>
+
+            <!-- Head approval info (shown to HR if head already approved) -->
+            <div v-if="leave.headApproval" class="leave-approval-trail">
+              <q-icon name="check_circle" size="13px" style="color: #66bb6a;" />
+              <span>หัวหน้าอนุมัติโดย {{ leave.headApproval.approvedByName }}</span>
+            </div>
+
+            <div class="leave-approval-actions">
+              <button class="leave-approve-btn" @click="handleApprove(leave)" :disabled="leaveStore.loading">
+                <q-icon name="check" size="16px" />
+                <span>อนุมัติ</span>
+              </button>
+              <button class="leave-reject-btn" @click="openRejectDialog(leave)" :disabled="leaveStore.loading">
+                <q-icon name="close" size="16px" />
+                <span>ไม่อนุมัติ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Grid -->
+      <div class="leave-grid">
+        <!-- Left: Submit Form -->
+        <div class="leave-card leave-form-card">
+          <div class="leave-card-header">
+            <q-icon name="post_add" size="18px" style="color: #ffb74d;" />
+            <span class="leave-card-title">ส่งใบลา</span>
+          </div>
+
+          <!-- Success message -->
+          <div v-if="showSuccess" class="leave-success">
+            <div class="leave-success-icon">✅</div>
+            <div class="leave-success-title">ส่งใบลาเรียบร้อยแล้ว!</div>
+            <div class="leave-success-desc">
+              {{ lastSubmittedType === 'sick' ? 'ลาป่วยได้รับการอนุมัติอัตโนมัติ' : 'ใบลาของคุณอยู่ระหว่างรอการอนุมัติ' }}
+            </div>
+            <button class="leave-new-btn" @click="resetForm">
+              <q-icon name="add" size="16px" />
+              <span>ส่งใบลาใหม่</span>
+            </button>
+          </div>
+
+          <!-- Form -->
+          <div v-else class="leave-form-body">
+
+            <!-- Name row -->
+            <div v-if="authStore.profile.firstName || authStore.profile.lastName" class="leave-profile-hint">
+              <q-icon name="person" size="14px" />
+              <span>ข้อมูลจากโปรไฟล์ของคุณ</span>
+            </div>
+            <div class="leave-form-row">
+              <div class="leave-field">
+                <label class="leave-field-label">ชื่อ <span class="leave-required">*</span></label>
+                <input v-model="form.firstName" class="leave-input" placeholder="ชื่อ"
+                  :readonly="!!(authStore.profile.firstName)" />
+              </div>
+              <div class="leave-field">
+                <label class="leave-field-label">นามสกุล <span class="leave-required">*</span></label>
+                <input v-model="form.lastName" class="leave-input" placeholder="นามสกุล"
+                  :readonly="!!(authStore.profile.lastName)" />
+              </div>
+            </div>
+
+            <!-- Leave Type -->
+            <div class="leave-field">
+              <label class="leave-field-label">ประเภทการลา <span class="leave-required">*</span></label>
+              <div class="leave-type-grid">
+                <button v-for="t in leaveStore.leaveTypes" :key="t.value"
+                  class="leave-type-btn"
+                  :class="{ 'leave-type-selected': form.leaveType === t.value }"
+                  @click="form.leaveType = t.value">
+                  <span class="leave-type-icon">{{ t.icon }}</span>
+                  <span class="leave-type-label">{{ t.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Date range -->
+            <div class="leave-form-row">
+              <div class="leave-field">
+                <label class="leave-field-label">วันที่เริ่มลา <span class="leave-required">*</span></label>
+                <input v-model="form.startDate" type="date" class="leave-input leave-date-input" />
+              </div>
+              <div class="leave-field">
+                <label class="leave-field-label">วันที่สิ้นสุด <span class="leave-required">*</span></label>
+                <input v-model="form.endDate" type="date" class="leave-input leave-date-input" :min="form.startDate" />
+              </div>
+            </div>
+
+            <!-- Days count -->
+            <div v-if="leaveDays > 0" class="leave-days-preview">
+              <q-icon name="date_range" size="16px" />
+              <span>ลาทั้งหมด <strong>{{ leaveDays }}</strong> วัน</span>
+            </div>
+
+            <!-- Details -->
+            <div class="leave-field">
+              <label class="leave-field-label">รายละเอียด (ไม่บังคับ)</label>
+              <textarea v-model="form.details" class="leave-textarea"
+                placeholder="ระบุรายละเอียดเพิ่มเติม เช่น เหตุผลการลา..."
+                rows="3" maxlength="500"></textarea>
+              <div class="leave-char-count">{{ form.details.length }}/500</div>
+            </div>
+
+            <!-- Error -->
+            <div v-if="formError" class="leave-error">
+              <q-icon name="error_outline" size="16px" />
+              <span>{{ formError }}</span>
+            </div>
+
+            <!-- Submit -->
+            <button class="leave-submit-btn" :disabled="leaveStore.loading || !isFormValid" @click="handleSubmit">
+              <q-spinner v-if="leaveStore.loading" size="18px" color="white" class="q-mr-sm" />
+              <q-icon v-else name="send" size="18px" class="q-mr-sm" />
+              <span>{{ leaveStore.loading ? 'กำลังส่ง...' : 'ส่งใบลา' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: History -->
+        <div class="leave-card leave-history-card">
+          <div class="leave-card-header">
+            <q-icon name="history" size="18px" style="color: #42a5f5;" />
+            <span class="leave-card-title">ประวัติการลา</span>
+            <q-badge v-if="leaveStore.pendingCount > 0" :label="leaveStore.pendingCount + ' รอ'" class="leave-pending-badge" />
+            <div style="flex:1"></div>
+            <!-- Tabs -->
+            <div class="leave-tabs">
+              <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
+              <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'team' }" @click="switchToTeam">ทั้งทีม</button>
+            </div>
+            <button class="leave-refresh-btn" :disabled="leaveStore.loading" @click="refreshHistory" title="รีเฟรช">
+              <q-icon name="refresh" size="15px" :class="{ 'leave-spin': leaveStore.loading }" />
+            </button>
+            <button class="leave-export-btn"
+              :disabled="(historyTab === 'my' ? leaveStore.myLeaves.length : leaveStore.teamLeaves.length) === 0"
+              @click="exportToExcel"
+              title="Export เป็น Excel">
+              <q-icon name="download" size="15px" />
+              <span>Export</span>
+            </button>
+          </div>
+
+          <!-- My Leaves -->
+          <div v-if="historyTab === 'my'" class="leave-history-list">
+            <div v-if="leaveStore.myLeaves.length === 0" class="leave-empty">
+              <q-icon name="beach_access" size="40px" style="color: #2a2b2e;" />
+              <span>ยังไม่มีประวัติการลา</span>
+            </div>
+
+            <div v-for="leave in leaveStore.myLeaves" :key="leave.id" class="leave-history-item">
+              <div class="leave-history-top">
+                <div class="leave-history-type">
+                  <span class="leave-history-type-icon">{{ getTypeInfo(leave.leaveType).icon }}</span>
+                  <span class="leave-history-type-label">{{ getTypeInfo(leave.leaveType).label }}</span>
+                </div>
+                <div class="leave-history-status"
+                  :style="{ color: getStatusInfo(leave.status).color, background: getStatusInfo(leave.status).color + '15' }">
+                  <q-icon :name="getStatusInfo(leave.status).icon" size="13px" />
+                  <span>{{ getStatusInfo(leave.status).label }}</span>
+                </div>
+              </div>
+
+              <div class="leave-history-name">{{ leave.firstName }} {{ leave.lastName }}</div>
+
+              <div class="leave-history-dates">
+                <q-icon name="date_range" size="13px" />
+                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
+                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+              </div>
+
+              <div v-if="leave.details" class="leave-history-details">
+                {{ leave.details }}
+              </div>
+
+              <!-- Approval trail -->
+              <div v-if="leave.headApproval" class="leave-approval-trail">
+                <q-icon name="check_circle" size="12px" style="color: #66bb6a;" />
+                <span>หัวหน้าอนุมัติ: {{ leave.headApproval.approvedByName }}</span>
+              </div>
+              <div v-if="leave.hrApproval" class="leave-approval-trail">
+                <q-icon name="check_circle" size="12px" style="color: #ce93d8;" />
+                <span>HR อนุมัติ: {{ leave.hrApproval.approvedByName }}</span>
+              </div>
+              <div v-if="leave.status === 'rejected' && leave.rejectionReason" class="leave-rejection-reason">
+                <q-icon name="info" size="12px" />
+                <span>เหตุผล: {{ leave.rejectionReason }}</span>
+              </div>
+
+              <div class="leave-history-bottom">
+                <span class="leave-history-submitted">ส่งเมื่อ {{ formatTimestamp(leave.submittedAt) }}</span>
+                <button v-if="leave.status === 'pending_head' || leave.status === 'pending_hr'"
+                  class="leave-cancel-btn" @click="handleCancel(leave.id)">
+                  <q-icon name="close" size="13px" />
+                  <span>ยกเลิก</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team Leaves -->
+          <div v-else class="leave-history-list">
+            <div v-if="leaveStore.teamLeaves.length === 0" class="leave-empty">
+              <q-icon name="groups" size="40px" style="color: #2a2b2e;" />
+              <span>ยังไม่มีข้อมูลการลาของทีม</span>
+            </div>
+
+            <div v-for="leave in leaveStore.teamLeaves" :key="leave.id"
+              class="leave-history-item" :class="{ 'leave-today-item': isLeaveToday(leave) }">
+              <div class="leave-history-top">
+                <div class="leave-history-type">
+                  <span class="leave-history-type-icon">{{ getTypeInfo(leave.leaveType).icon }}</span>
+                  <span class="leave-history-type-label">{{ getTypeInfo(leave.leaveType).label }}</span>
+                </div>
+                <span v-if="isLeaveToday(leave)" class="leave-today-badge">
+                  <q-icon name="circle" size="6px" />
+                  วันนี้
+                </span>
+                <div class="leave-history-status"
+                  :style="{ color: getStatusInfo(leave.status).color, background: getStatusInfo(leave.status).color + '15' }">
+                  <q-icon :name="getStatusInfo(leave.status).icon" size="13px" />
+                  <span>{{ getStatusInfo(leave.status).label }}</span>
+                </div>
+              </div>
+
+              <div class="leave-history-name">{{ leave.firstName }} {{ leave.lastName }}</div>
+
+              <div class="leave-history-dates">
+                <q-icon name="date_range" size="13px" />
+                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
+                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+              </div>
+
+              <div v-if="leave.details" class="leave-history-details">
+                {{ leave.details }}
+              </div>
+
+              <div class="leave-history-bottom">
+                <span class="leave-history-submitted">โดย {{ leave.userName }} — {{ formatTimestamp(leave.submittedAt) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reject Dialog -->
+    <q-dialog v-model="showRejectDialog">
+      <q-card class="reject-dialog-card">
+        <q-card-section class="row items-center q-pb-sm">
+          <q-icon name="cancel" size="22px" style="color: #ef5350;" class="q-mr-sm" />
+          <div class="reject-dialog-title">ไม่อนุมัติใบลา</div>
+          <q-space />
+          <q-btn icon="close" flat round dense style="color: #6b6c6f;" @click="showRejectDialog = false" />
+        </q-card-section>
+        <q-separator style="background: rgba(44, 58, 69, 0.4);" />
+        <q-card-section>
+          <div v-if="rejectingLeave" class="reject-leave-info">
+            <span>{{ rejectingLeave.firstName }} {{ rejectingLeave.lastName }}</span>
+            <span class="reject-leave-type">{{ getTypeInfo(rejectingLeave.leaveType).icon }} {{ getTypeInfo(rejectingLeave.leaveType).label }}</span>
+            <span class="reject-leave-dates">{{ formatDate(rejectingLeave.startDate) }} — {{ formatDate(rejectingLeave.endDate) }}</span>
+          </div>
+          <label class="reject-field-label">เหตุผลที่ไม่อนุมัติ</label>
+          <textarea v-model="rejectReason" class="reject-textarea"
+            placeholder="ระบุเหตุผล (ไม่บังคับ)..." rows="3" maxlength="300"></textarea>
+          <div class="row justify-end q-gutter-sm q-mt-md">
+            <q-btn flat label="ยกเลิก" class="reject-cancel-btn" @click="showRejectDialog = false" />
+            <q-btn label="ยืนยันไม่อนุมัติ" icon="cancel" class="reject-confirm-btn"
+              :loading="leaveStore.loading" @click="handleReject" />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+  </q-page>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import { useLeaveStore } from 'stores/leave'
+import { useAuthStore } from 'stores/auth'
+import { useNotificationsStore } from 'stores/notifications'
+import * as XLSX from 'xlsx'
+
+const leaveStore = useLeaveStore()
+const authStore = useAuthStore()
+const notificationsStore = useNotificationsStore()
+
+const historyTab = ref('my')
+const showSuccess = ref(false)
+const formError = ref('')
+const showRejectDialog = ref(false)
+const rejectingLeave = ref(null)
+const rejectReason = ref('')
+const lastSubmittedType = ref('')
+
+const form = ref({
+  firstName: '',
+  lastName: '',
+  leaveType: '',
+  startDate: '',
+  endDate: '',
+  details: ''
+})
+
+// Show approval section for head, hr, super_admin
+const showApprovalSection = computed(() => {
+  const role = authStore.profile.role
+  return role === 'head' || role === 'hr' || role === 'super_admin'
+})
+
+// Fill name from profile (reactive - works even if profile loads late)
+const fillNameFromProfile = () => {
+  if (authStore.profile.firstName || authStore.profile.lastName) {
+    form.value.firstName = authStore.profile.firstName || ''
+    form.value.lastName = authStore.profile.lastName || ''
+  } else {
+    const displayName = authStore.user?.displayName || ''
+    if (displayName) {
+      const parts = displayName.split(' ')
+      form.value.firstName = parts[0] || ''
+      form.value.lastName = parts.slice(1).join(' ') || ''
+    }
+  }
+}
+
+// Watch profile changes to fill name when profile finishes loading
+const approvalsFetched = ref(false)
+
+watch(() => authStore.profile, async () => {
+  if (!form.value.firstName && !form.value.lastName) {
+    fillNameFromProfile()
+  }
+  // Fetch pending approvals when profile (role) loads
+  if (showApprovalSection.value && !approvalsFetched.value) {
+    approvalsFetched.value = true
+    await leaveStore.fetchPendingApprovals()
+  }
+}, { deep: true })
+
+onMounted(async () => {
+  fillNameFromProfile()
+
+  // Set default date to today
+  const today = new Date()
+  form.value.startDate = leaveStore.getDateStr(today)
+  form.value.endDate = leaveStore.getDateStr(today)
+
+  await leaveStore.fetchMyLeaves()
+
+  // Fetch pending approvals if user has approval rights
+  if (showApprovalSection.value && !approvalsFetched.value) {
+    approvalsFetched.value = true
+    await leaveStore.fetchPendingApprovals()
+  }
+})
+
+// Computed: number of leave days
+const leaveDays = computed(() => {
+  if (!form.value.startDate || !form.value.endDate) return 0
+  return calcDays(form.value.startDate, form.value.endDate)
+})
+
+// Computed: form valid
+const isFormValid = computed(() => {
+  return form.value.firstName.trim() &&
+    form.value.lastName.trim() &&
+    form.value.leaveType &&
+    form.value.startDate &&
+    form.value.endDate &&
+    form.value.startDate <= form.value.endDate
+})
+
+// Helpers
+const getTypeInfo = (type) => {
+  return leaveStore.leaveTypes.find(t => t.value === type) || { icon: '📄', label: type, color: '#9e9e9e' }
+}
+
+const getStatusInfo = (status) => {
+  return leaveStore.statusLabels[status] || { label: status, color: '#9e9e9e', icon: 'info' }
+}
+
+const calcDays = (start, end) => {
+  if (!start || !end) return 0
+  const s = new Date(start)
+  const e = new Date(end)
+  const diff = Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1
+  return Math.max(0, diff)
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+const isLeaveToday = (leave) => {
+  if (!leave.startDate || !leave.endDate) return false
+  if (leave.status === 'rejected' || leave.status === 'cancelled') return false
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return leave.startDate <= todayStr && todayStr <= leave.endDate
+}
+
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return ''
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) +
+    ' ' + date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+}
+
+const exportToExcel = () => {
+  const leaves = historyTab.value === 'my' ? leaveStore.myLeaves : leaveStore.teamLeaves
+  if (!leaves || leaves.length === 0) return
+
+  const rows = leaves.map(leave => {
+    const typeInfo = getTypeInfo(leave.leaveType)
+    const statusInfo = getStatusInfo(leave.status)
+    const days = calcDays(leave.startDate, leave.endDate)
+    const submitted = leave.submittedAt
+      ? (leave.submittedAt.toDate ? leave.submittedAt.toDate() : new Date(leave.submittedAt))
+      : null
+
+    return {
+      'ชื่อ-นามสกุล': `${leave.firstName || ''} ${leave.lastName || ''}`.trim(),
+      'ประเภทการลา': typeInfo.label,
+      'วันที่เริ่ม': leave.startDate || '',
+      'วันที่สิ้นสุด': leave.endDate || '',
+      'จำนวนวัน': days,
+      'เหตุผล': leave.details || '',
+      'สถานะ': statusInfo.label,
+      'แผนก': leave.department || '',
+      'หัวหน้าอนุมัติ': leave.headApproval?.approvedByName || '-',
+      'HR อนุมัติ': leave.hrApproval?.approvedByName || '-',
+      'เหตุผลที่ไม่อนุมัติ': leave.rejectionReason || '-',
+      'วันที่ส่ง': submitted ? submitted.toLocaleDateString('th-TH') + ' ' + submitted.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''
+    }
+  })
+
+  const ws = XLSX.utils.json_to_sheet(rows)
+
+  // Auto column width
+  const colWidths = Object.keys(rows[0]).map(key => {
+    const maxLen = Math.max(key.length, ...rows.map(r => String(r[key] || '').length))
+    return { wch: Math.min(maxLen + 2, 40) }
+  })
+  ws['!cols'] = colWidths
+
+  const wb = XLSX.utils.book_new()
+  const sheetName = historyTab.value === 'my' ? 'ประวัติการลาของฉัน' : 'ประวัติการลาทั้งทีม'
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const filename = `leave-history-${historyTab.value}-${today}.xlsx`
+  XLSX.writeFile(wb, filename)
+}
+
+const handleSubmit = async () => {
+  formError.value = ''
+
+  if (!isFormValid.value) {
+    formError.value = 'กรุณากรอกข้อมูลให้ครบถ้วน'
+    return
+  }
+
+  const success = await leaveStore.submitLeave({
+    firstName: form.value.firstName,
+    lastName: form.value.lastName,
+    leaveType: form.value.leaveType,
+    startDate: form.value.startDate,
+    endDate: form.value.endDate,
+    details: form.value.details
+  })
+
+  if (success) {
+    lastSubmittedType.value = form.value.leaveType
+    showSuccess.value = true
+  } else {
+    formError.value = leaveStore.error || 'เกิดข้อผิดพลาด กรุณาลองใหม่'
+  }
+}
+
+const resetForm = () => {
+  showSuccess.value = false
+  form.value.leaveType = ''
+  form.value.details = ''
+  const today = new Date()
+  form.value.startDate = leaveStore.getDateStr(today)
+  form.value.endDate = leaveStore.getDateStr(today)
+}
+
+const handleCancel = async (id) => {
+  await leaveStore.cancelLeave(id)
+}
+
+const refreshApprovals = async () => {
+  await leaveStore.fetchPendingApprovals()
+}
+
+const refreshHistory = async () => {
+  if (historyTab.value === 'my') {
+    await leaveStore.fetchMyLeaves()
+  } else {
+    await leaveStore.fetchTeamLeaves()
+  }
+}
+
+const switchToTeam = async () => {
+  historyTab.value = 'team'
+  if (leaveStore.teamLeaves.length === 0) {
+    await leaveStore.fetchTeamLeaves()
+  }
+}
+
+// Approval handlers
+const handleApprove = async (leave) => {
+  const role = authStore.profile.role
+  let success = false
+
+  if (leave.status === 'pending_head' && (role === 'head' || role === 'super_admin')) {
+    // Head step: pending_head -> pending_hr (super_admin also approves as head role)
+    success = await leaveStore.headApprove(leave.id)
+    if (success) {
+      await notificationsStore.createNotification({
+        recipientEmail: leave.userId,
+        type: 'leave_approved',
+        title: 'หัวหน้าอนุมัติใบลา',
+        message: `ใบลา${getTypeInfo(leave.leaveType).label}ของคุณได้รับการอนุมัติจากหัวหน้าแล้ว รอ HR อนุมัติ`
+      })
+    }
+  } else if (leave.status === 'pending_hr' && role === 'hr') {
+    // Final step: only HR can do final approval
+    success = await leaveStore.hrApprove(leave.id)
+    if (success) {
+      await notificationsStore.createNotification({
+        recipientEmail: leave.userId,
+        type: 'leave_approved',
+        title: 'ใบลาอนุมัติแล้ว',
+        message: `ใบลา${getTypeInfo(leave.leaveType).label}ของคุณได้รับการอนุมัติแล้ว`
+      })
+    }
+  }
+}
+
+const openRejectDialog = (leave) => {
+  rejectingLeave.value = leave
+  rejectReason.value = ''
+  showRejectDialog.value = true
+}
+
+const handleReject = async () => {
+  if (!rejectingLeave.value) return
+  const success = await leaveStore.rejectLeave(rejectingLeave.value.id, rejectReason.value)
+  if (success) {
+    // Notify the employee
+    await notificationsStore.createNotification({
+      recipientEmail: rejectingLeave.value.userId,
+      type: 'leave_rejected',
+      title: 'ใบลาไม่อนุมัติ',
+      message: `ใบลา${getTypeInfo(rejectingLeave.value.leaveType).label}ของคุณไม่ได้รับการอนุมัติ${rejectReason.value ? ': ' + rejectReason.value : ''}`
+    })
+    showRejectDialog.value = false
+    rejectingLeave.value = null
+    rejectReason.value = ''
+  }
+}
+</script>
+
+<style scoped>
+.leave-page {
+  background: transparent;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.leave-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* ====== Header ====== */
+.leave-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.leave-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.leave-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffb74d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.leave-header-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #e0e1e4;
+}
+
+.leave-header-subtitle {
+  font-size: 0.72rem;
+  color: #6b6c6f;
+  margin-top: 2px;
+}
+
+.leave-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #9e9e9e;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-back-btn:hover {
+  border-color: rgba(92, 156, 230, 0.3);
+  color: #5c9ce6;
+}
+
+/* ====== Grid ====== */
+.leave-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ====== Card ====== */
+.leave-card {
+  background: rgba(30, 33, 36, 0.7);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.leave-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.leave-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #cecfd2;
+}
+
+.leave-pending-badge {
+  background: rgba(255, 183, 77, 0.15) !important;
+  color: #ffb74d !important;
+  font-size: 0.58rem !important;
+}
+
+/* ====== Success State ====== */
+.leave-success {
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.leave-success-icon { font-size: 2.5rem; margin-bottom: 10px; }
+.leave-success-title { font-size: 1rem; font-weight: 700; color: #66bb6a; margin-bottom: 4px; }
+.leave-success-desc { font-size: 0.75rem; color: #6b6c6f; margin-bottom: 20px; }
+
+.leave-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px dashed rgba(92, 156, 230, 0.3);
+  background: transparent;
+  color: #5c9ce6;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-new-btn:hover {
+  background: rgba(92, 156, 230, 0.08);
+  border-color: rgba(92, 156, 230, 0.5);
+}
+
+/* ====== Form ====== */
+.leave-form-body { padding: 16px; }
+
+.leave-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.leave-field { margin-bottom: 14px; }
+
+.leave-field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9e9e9e;
+  margin-bottom: 6px;
+}
+
+.leave-required { color: #ef5350; }
+
+.leave-profile-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #5c9ce6;
+  margin-bottom: 4px;
+  opacity: 0.85;
+}
+
+.leave-input[readonly] {
+  opacity: 0.7;
+  cursor: default;
+  background: rgba(30, 33, 36, 0.3);
+}
+
+.leave-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(30, 33, 36, 0.6);
+  color: #cecfd2;
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.leave-input:focus { border-color: rgba(92, 156, 230, 0.5); }
+.leave-input::placeholder { color: #4b5563; }
+.leave-date-input { color-scheme: dark; }
+
+/* ====== Leave Type ====== */
+.leave-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.leave-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: rgba(36, 37, 40, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.leave-type-btn:hover {
+  border-color: rgba(255, 183, 77, 0.3);
+  background: rgba(255, 183, 77, 0.05);
+}
+
+.leave-type-btn.leave-type-selected {
+  border-color: rgba(255, 183, 77, 0.5);
+  background: rgba(255, 183, 77, 0.1);
+  box-shadow: 0 0 12px rgba(255, 183, 77, 0.08);
+}
+
+.leave-type-icon { font-size: 1.5rem; }
+.leave-type-label { font-size: 0.68rem; color: #9e9e9e; font-weight: 600; }
+.leave-type-selected .leave-type-label { color: #ffb74d; }
+
+/* ====== Days Preview ====== */
+.leave-days-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(66, 165, 245, 0.08);
+  border: 1px solid rgba(66, 165, 245, 0.15);
+  font-size: 0.75rem;
+  color: #42a5f5;
+  margin-bottom: 14px;
+}
+
+.leave-days-preview strong { font-weight: 800; }
+
+/* ====== Textarea ====== */
+.leave-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(30, 33, 36, 0.6);
+  color: #cecfd2;
+  font-size: 0.82rem;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.leave-textarea:focus { border-color: rgba(92, 156, 230, 0.5); }
+.leave-textarea::placeholder { color: #4b5563; }
+.leave-char-count { text-align: right; font-size: 0.6rem; color: #4b5563; margin-top: 3px; }
+
+/* ====== Error ====== */
+.leave-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(239, 83, 80, 0.08);
+  border: 1px solid rgba(239, 83, 80, 0.15);
+  font-size: 0.75rem;
+  color: #ef5350;
+  margin-bottom: 14px;
+}
+
+/* ====== Submit ====== */
+.leave-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #ef6c00, #ffb74d);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 16px rgba(255, 152, 0, 0.2);
+}
+
+.leave-submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(255, 152, 0, 0.3);
+}
+
+.leave-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ====== Tabs ====== */
+.leave-tabs {
+  display: flex;
+  background: rgba(36, 37, 40, 0.6);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.leave-tab {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6b6c6f;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-tab:hover { color: #9e9e9e; }
+.leave-tab-active { background: rgba(92, 156, 230, 0.12); color: #5c9ce6; }
+
+.leave-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #6b6c6f;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 6px;
+}
+
+.leave-refresh-btn:hover:not(:disabled) {
+  border-color: rgba(92, 156, 230, 0.3);
+  color: #5c9ce6;
+}
+
+.leave-refresh-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.leave-spin {
+  animation: leave-spin-anim 0.8s linear infinite;
+}
+
+@keyframes leave-spin-anim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.leave-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(76, 175, 80, 0.25);
+  background: rgba(76, 175, 80, 0.08);
+  color: #66bb6a;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 6px;
+}
+
+.leave-export-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.18);
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+.leave-export-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ====== History List ====== */
+.leave-history-list {
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.leave-history-list::-webkit-scrollbar { width: 3px; }
+.leave-history-list::-webkit-scrollbar-thumb { background: rgba(58, 59, 62, 0.3); border-radius: 2px; }
+
+.leave-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  color: #4a4b4e;
+  font-size: 0.78rem;
+}
+
+/* ====== History Item ====== */
+.leave-history-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.12);
+  transition: background 0.15s;
+}
+
+.leave-today-item {
+  background: rgba(66, 165, 245, 0.04);
+  border-left: 3px solid #42a5f5;
+}
+
+.leave-today-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(66, 165, 245, 0.12);
+  color: #42a5f5;
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.leave-history-item:hover { background: rgba(58, 59, 62, 0.08); }
+
+.leave-history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.leave-history-type { display: flex; align-items: center; gap: 6px; }
+.leave-history-type-icon { font-size: 0.9rem; }
+.leave-history-type-label { font-size: 0.75rem; font-weight: 700; color: #e0e1e4; }
+
+.leave-history-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.leave-history-name { font-size: 0.78rem; font-weight: 600; color: #cecfd2; margin-bottom: 4px; }
+
+.leave-history-dates {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #9e9e9e;
+  margin-bottom: 4px;
+}
+
+.leave-history-days { font-size: 0.62rem; color: #6b6c6f; }
+
+.leave-history-details {
+  font-size: 0.72rem;
+  color: #6b6c6f;
+  font-style: italic;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.leave-history-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.leave-history-submitted { font-size: 0.62rem; color: #4b5563; }
+
+.leave-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 83, 80, 0.2);
+  background: rgba(239, 83, 80, 0.06);
+  color: #ef5350;
+  font-size: 0.62rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-cancel-btn:hover {
+  background: rgba(239, 83, 80, 0.12);
+  border-color: rgba(239, 83, 80, 0.4);
+}
+
+/* ====== Approval Section ====== */
+.leave-approval-card {
+  margin-bottom: 20px;
+}
+
+.leave-approval-badge {
+  background: rgba(206, 147, 216, 0.15) !important;
+  color: #ce93d8 !important;
+  font-size: 0.58rem !important;
+}
+
+.leave-role-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(206, 147, 216, 0.1);
+  color: #ce93d8;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.leave-approval-list {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.leave-approval-list::-webkit-scrollbar { width: 3px; }
+.leave-approval-list::-webkit-scrollbar-thumb { background: rgba(58, 59, 62, 0.3); border-radius: 2px; }
+
+.leave-approval-item {
+  padding: 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.12);
+}
+
+.leave-approval-item:last-child { border-bottom: none; }
+
+.leave-approval-item-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.leave-approval-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.leave-approval-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffb74d 0%, #ef6c00 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.leave-approval-info { flex: 1; min-width: 0; }
+.leave-approval-name { font-size: 0.82rem; font-weight: 600; color: #e1e2e5; }
+.leave-approval-email { font-size: 0.7rem; color: #6b6c6f; }
+
+.leave-approval-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.leave-approval-type {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #cecfd2;
+}
+
+.leave-approval-dates {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #9e9e9e;
+}
+
+.leave-approval-dept {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #6b6c6f;
+  margin-bottom: 6px;
+}
+
+.leave-approval-trail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #9e9e9e;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.leave-rejection-reason {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #ef5350;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.leave-approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.leave-approve-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-approve-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 187, 106, 0.3);
+}
+
+.leave-approve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.leave-reject-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  background: transparent;
+  color: #ef5350;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-reject-btn:hover:not(:disabled) {
+  background: rgba(239, 83, 80, 0.08);
+  border-color: rgba(239, 83, 80, 0.5);
+}
+
+.leave-reject-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ====== Reject Dialog ====== */
+.reject-dialog-card {
+  min-width: 420px;
+  max-width: 500px;
+  background: #1e2124 !important;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  border-radius: 14px !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+.reject-dialog-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #ef5350;
+}
+
+.reject-leave-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e1e2e5;
+}
+
+.reject-leave-type {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 183, 77, 0.1);
+  font-size: 0.75rem;
+  color: #ffb74d;
+}
+
+.reject-leave-dates {
+  font-size: 0.72rem;
+  color: #9e9e9e;
+  font-weight: 400;
+}
+
+.reject-field-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.reject-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(30, 33, 36, 0.6);
+  color: #cecfd2;
+  font-size: 0.82rem;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.reject-textarea:focus { border-color: rgba(239, 83, 80, 0.4); }
+.reject-textarea::placeholder { color: #4b5563; }
+
+.reject-cancel-btn {
+  color: #9ca3af !important;
+  font-size: 0.82rem;
+}
+
+.reject-confirm-btn {
+  background: linear-gradient(135deg, #ef5350 0%, #c62828 100%) !important;
+  color: white !important;
+  font-weight: 600;
+  font-size: 0.82rem;
+  border-radius: 8px;
+}
+
+/* ====== Responsive ====== */
+@media (max-width: 768px) {
+  .leave-page { padding: 16px; }
+  .leave-grid { grid-template-columns: 1fr; }
+  .leave-form-row { grid-template-columns: 1fr; }
+  .leave-page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .leave-approval-actions { flex-direction: column; }
+  .reject-dialog-card { min-width: 90vw; }
+}
+</style>

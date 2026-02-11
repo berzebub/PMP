@@ -1,0 +1,163 @@
+// app global css in SCSS form
+
+// Custom Theme Colors
+:root {
+  // Backgrounds
+  --primary-bg: #18191a;
+  --surface-bg: #242528;
+  --surface-dark: #111213;
+
+  // Borders
+  --border-color: #3a3b3e;
+  --border-hover: #5a5b5e;
+
+  // Text
+  --text-primary: #cecfd2;
+  --text-secondary: #9e9e9e;
+  --text-muted: #6b6c6f;
+
+  // Accent Colors
+  --primary-accent: #cecfd2;
+  --secondary-accent: #cecfd2;
+  --accent-blue: #5c9ce6;
+  --accent-green: #4caf50;
+  --accent-green-dark: #388e3c;
+
+  // Semantic Colors
+  --success-color: #4caf50;
+  --warning-color: #ffd54f;
+  --error-color: #ef5350;
+  --info-color: #5c9ce6;
+}
+
+.brx {
+  border: 1px solid red;
+}
+
+// Global styles
+body {
+  background-color: var(--primary-bg);
+  background-image: url("/images/main-bg.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--text-primary);
+  position: relative;
+}
+
+// Add overlay for better text readability
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(24, 25, 26, 0.3);
+  z-index: -1;
+  pointer-events: none;
+}
+
+// Custom utility classes
+.bg-primary {
+  background-color: transparent !important;
+}
+
+.bg-surface {
+  background-color: rgba(36, 37, 40, 0.9) !important;
+  backdrop-filter: blur(10px);
+}
+
+.text-primary {
+  color: var(--primary-accent) !important;
+}
+
+.text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+.text-success {
+  color: var(--success-color) !important;
+}
+
+.text-warning {
+  color: var(--warning-color) !important;
+}
+
+.text-error {
+  color: var(--error-color) !important;
+}
+
+.border-primary {
+  border-color: var(--border-color) !important;
+}
+
+// Quasar component overrides
+.q-btn--primary {
+  background-color: var(--primary-accent) !important;
+  color: var(--primary-bg) !important;
+}
+
+.q-btn--secondary {
+  background-color: var(--secondary-accent) !important;
+  color: var(--primary-bg) !important;
+}
+
+.q-card {
+  background-color: rgba(36, 37, 40, 0.9) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(58, 59, 62, 0.5) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+}
+
+.q-input--outlined .q-field__control {
+  border-color: var(--border-color) !important;
+}
+
+.q-input--outlined .q-field__control:hover {
+  border-color: var(--primary-accent) !important;
+}
+
+.q-input--outlined.q-field--focused .q-field__control {
+  border-color: var(--primary-accent) !important;
+}
+
+.q-drawer {
+  background-color: rgba(36, 37, 40, 0.9) !important;
+  backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(58, 59, 62, 0.5) !important;
+}
+
+.q-header {
+  background-color: rgba(36, 37, 40, 0.9) !important;
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(58, 59, 62, 0.5) !important;
+}
+
+.q-list--bordered {
+  border-color: var(--border-color) !important;
+}
+
+.q-separator {
+  background-color: var(--border-color) !important;
+}
+
+// Custom scrollbar
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--primary-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-accent);
+}
