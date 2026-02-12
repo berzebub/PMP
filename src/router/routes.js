@@ -15,6 +15,7 @@ const routes = [
       { path: '', component: () => import('pages/IndexPage.vue') },
       { path: 'checkins', component: () => import('pages/CheckinPage.vue') },
       { path: 'worklogs', component: () => import('pages/WorklogPage.vue') },
+      { path: 'portfolio', component: () => import('pages/PortfolioPage.vue') },
       { path: 'leaves', component: () => import('pages/LeavePage.vue') },
       { path: 'leave-report', component: () => import('pages/LeaveReportPage.vue') },
       { path: 'expenses', component: () => import('pages/ExpensePage.vue') },
@@ -22,7 +23,10 @@ const routes = [
       { path: 'admin', component: () => import('pages/AdminPage.vue') },
       { path: 'project/:id', component: () => import('pages/ProjectPage.vue') },
       { path: 'project/:id/settings', component: () => import('pages/ProjectSettingsPage.vue') },
-      { path: 'project/:id/trash', component: () => import('pages/TrashPage.vue') }
+      { path: 'project/:id/trash', component: () => import('pages/TrashPage.vue') },
+      { path: 'games', component: () => import('pages/GamesPage.vue') },
+      { path: 'games/dino-runner', component: () => import('pages/DinoRunnerPage.vue') },
+      { path: 'games/hallway-herding', component: () => import('pages/HallwayHerdingPage.vue') }
     ]
   },
 

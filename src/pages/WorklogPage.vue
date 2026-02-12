@@ -82,15 +82,82 @@
               <div class="wl-char-count">{{ summary.length }}/300</div>
             </div>
 
+            <!-- File Attachments -->
+            <div class="wl-attach-section">
+              <label class="wl-field-label">แนบไฟล์ (ไม่บังคับ)</label>
+              <div class="wl-attach-hint">รองรับรูปภาพ (JPG, PNG, GIF, WebP) และ PDF ขนาดไม่เกิน 5MB ต่อไฟล์</div>
+
+              <!-- Existing attachments (from today's log) -->
+              <div v-if="existingAttachments.length > 0" class="wl-attach-list">
+                <div v-for="(att, idx) in existingAttachments" :key="'existing-' + idx" class="wl-attach-chip">
+                  <img v-if="att.type?.startsWith('image/')" :src="att.url" class="wl-attach-thumb" />
+                  <q-icon v-else name="picture_as_pdf" size="20px" class="wl-attach-pdf-icon" />
+                  <div class="wl-attach-chip-info">
+                    <div class="wl-attach-chip-name">{{ att.name }}</div>
+                    <div class="wl-attach-chip-size">{{ formatFileSize(att.size) }}</div>
+                  </div>
+                  <button class="wl-attach-chip-remove" @click="removeExistingAttachment(idx)">
+                    <q-icon name="close" size="14px" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Pending (new) files -->
+              <div v-if="pendingFiles.length > 0" class="wl-attach-list">
+                <div v-for="(file, idx) in pendingFiles" :key="'pending-' + idx" class="wl-attach-chip wl-attach-chip-new">
+                  <img v-if="file.type?.startsWith('image/')" :src="filePreviews[idx]" class="wl-attach-thumb" />
+                  <q-icon v-else name="picture_as_pdf" size="20px" class="wl-attach-pdf-icon" />
+                  <div class="wl-attach-chip-info">
+                    <div class="wl-attach-chip-name">{{ file.name }}</div>
+                    <div class="wl-attach-chip-size">{{ formatFileSize(file.size) }}</div>
+                  </div>
+                  <button class="wl-attach-chip-remove" @click="removePendingFile(idx)">
+                    <q-icon name="close" size="14px" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- File error -->
+              <div v-if="fileError" class="wl-attach-error">
+                <q-icon name="error_outline" size="14px" />
+                <span>{{ fileError }}</span>
+              </div>
+
+              <!-- Upload button -->
+              <button class="wl-attach-btn" @click="$refs.fileInput.click()">
+                <q-icon name="attach_file" size="16px" />
+                <span>แนบไฟล์</span>
+              </button>
+              <input
+                ref="fileInput"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                style="display: none"
+                @change="handleFileSelect"
+              />
+            </div>
+
+            <!-- Upload progress -->
+            <div v-if="worklogStore.uploading" class="wl-upload-progress">
+              <div class="wl-upload-progress-label">
+                <q-icon name="cloud_upload" size="16px" />
+                <span>กำลังอัปโหลดไฟล์... {{ worklogStore.uploadProgress }}%</span>
+              </div>
+              <div class="wl-upload-progress-bar">
+                <div class="wl-upload-progress-fill" :style="{ width: worklogStore.uploadProgress + '%' }"></div>
+              </div>
+            </div>
+
             <!-- Submit -->
             <button
               class="wl-submit-btn"
-              :disabled="worklogStore.loading || !hasValidEntries"
+              :disabled="worklogStore.loading || worklogStore.uploading || !hasValidEntries"
               @click="handleSubmit"
             >
-              <q-spinner v-if="worklogStore.loading" size="18px" color="white" class="q-mr-sm" />
+              <q-spinner v-if="worklogStore.loading || worklogStore.uploading" size="18px" color="white" class="q-mr-sm" />
               <q-icon v-else :name="worklogStore.hasSubmittedToday ? 'update' : 'send'" size="18px" class="q-mr-sm" />
-              <span>{{ worklogStore.loading ? 'กำลังบันทึก...' : worklogStore.hasSubmittedToday ? 'อัปเดตบันทึก' : 'ส่งบันทึก' }}</span>
+              <span>{{ worklogStore.uploading ? 'กำลังอัปโหลด...' : worklogStore.loading ? 'กำลังบันทึก...' : worklogStore.hasSubmittedToday ? 'อัปเดตบันทึก' : 'ส่งบันทึก' }}</span>
             </button>
 
             <div v-if="submitSuccess" class="wl-success-msg">
@@ -137,6 +204,18 @@
                 <div v-if="log.summary" class="wl-history-summary">
                   "{{ log.summary }}"
                 </div>
+                <!-- Attachments -->
+                <div v-if="log.attachments?.length" class="wl-attach-gallery">
+                  <div v-for="(att, ai) in log.attachments" :key="ai"
+                    class="wl-attach-gallery-item"
+                    @click="att.type?.startsWith('image/') ? openLightbox(att) : openPdf(att.url)">
+                    <img v-if="att.type?.startsWith('image/')" :src="att.url" class="wl-attach-gallery-thumb" />
+                    <div v-else class="wl-attach-gallery-pdf">
+                      <q-icon name="picture_as_pdf" size="22px" />
+                    </div>
+                    <div class="wl-attach-gallery-name">{{ att.name }}</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -178,12 +257,35 @@
                 <div v-if="log.summary" class="wl-team-summary">
                   "{{ log.summary }}"
                 </div>
+                <!-- Attachments -->
+                <div v-if="log.attachments?.length" class="wl-attach-gallery">
+                  <div v-for="(att, ai) in log.attachments" :key="ai"
+                    class="wl-attach-gallery-item"
+                    @click="att.type?.startsWith('image/') ? openLightbox(att) : openPdf(att.url)">
+                    <img v-if="att.type?.startsWith('image/')" :src="att.url" class="wl-attach-gallery-thumb" />
+                    <div v-else class="wl-attach-gallery-pdf">
+                      <q-icon name="picture_as_pdf" size="22px" />
+                    </div>
+                    <div class="wl-attach-gallery-name">{{ att.name }}</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Image Lightbox Dialog -->
+    <q-dialog v-model="showLightbox" maximized>
+      <div class="wl-lightbox" @click="showLightbox = false">
+        <button class="wl-lightbox-close" @click.stop="showLightbox = false">
+          <q-icon name="close" size="24px" />
+        </button>
+        <img v-if="lightboxImage" :src="lightboxImage.url" class="wl-lightbox-img" @click.stop />
+        <div v-if="lightboxImage" class="wl-lightbox-name">{{ lightboxImage.name }}</div>
+      </div>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -201,6 +303,14 @@ const activeTab = ref('history')
 const submitSuccess = ref(false)
 const teamDate = ref(new Date())
 
+// Attachment state
+const pendingFiles = ref([])         // New File objects to upload
+const filePreviews = ref([])         // Data URL previews for pending image files
+const existingAttachments = ref([])  // Already-uploaded attachments (from todayLog)
+const fileError = ref('')
+const showLightbox = ref(false)
+const lightboxImage = ref(null)
+
 onMounted(async () => {
   await worklogStore.fetchTodayLog()
   await worklogStore.fetchMyLogs(30)
@@ -210,6 +320,7 @@ onMounted(async () => {
   if (worklogStore.todayLog) {
     entries.value = [...(worklogStore.todayLog.entries || []), '']
     summary.value = worklogStore.todayLog.summary || ''
+    existingAttachments.value = [...(worklogStore.todayLog.attachments || [])]
   }
 })
 
@@ -299,15 +410,83 @@ const handleEntryBackspace = (idx, event) => {
   }
 }
 
+// --- File Attachment Handlers ---
+const handleFileSelect = (event) => {
+  fileError.value = ''
+  const files = Array.from(event.target.files || [])
+  event.target.value = '' // Reset input so same file can be re-selected
+
+  for (const file of files) {
+    // Validate type
+    if (!worklogStore.ALLOWED_TYPES.includes(file.type)) {
+      fileError.value = `ไฟล์ "${file.name}" ไม่รองรับ (รองรับเฉพาะรูปภาพและ PDF)`
+      continue
+    }
+    // Validate size
+    if (file.size > worklogStore.MAX_FILE_SIZE) {
+      fileError.value = `ไฟล์ "${file.name}" ขนาดเกิน 5MB`
+      continue
+    }
+    pendingFiles.value.push(file)
+    // Generate preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      const idx = pendingFiles.value.length - 1
+      reader.onload = (e) => {
+        filePreviews.value[idx] = e.target.result
+      }
+      reader.readAsDataURL(file)
+    } else {
+      filePreviews.value.push(null)
+    }
+  }
+}
+
+const removePendingFile = (idx) => {
+  pendingFiles.value.splice(idx, 1)
+  filePreviews.value.splice(idx, 1)
+}
+
+const removeExistingAttachment = async (idx) => {
+  const att = existingAttachments.value[idx]
+  if (att?.path) {
+    await worklogStore.deleteAttachment(att.path)
+  }
+  existingAttachments.value.splice(idx, 1)
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+const openLightbox = (att) => {
+  lightboxImage.value = att
+  showLightbox.value = true
+}
+
+const openPdf = (url) => {
+  window.open(url, '_blank')
+}
+
 // Submit
 const handleSubmit = async () => {
   submitSuccess.value = false
   const success = await worklogStore.submitLog({
     entries: entries.value,
-    summary: summary.value
+    summary: summary.value,
+    newFiles: pendingFiles.value,
+    existingAttachments: existingAttachments.value
   })
   if (success) {
     submitSuccess.value = true
+    // Move uploaded files into existing attachments, clear pending
+    existingAttachments.value = [...(worklogStore.todayLog?.attachments || [])]
+    pendingFiles.value = []
+    filePreviews.value = []
+    fileError.value = ''
     // Refresh history
     worklogStore.fetchMyLogs(30)
     worklogStore.fetchTeamLogs(worklogStore.getDateStr(teamDate.value))
@@ -988,6 +1167,265 @@ const formatTime = (timestamp) => {
   font-style: italic;
   margin-top: 4px;
   padding-left: 14px;
+}
+
+/* ====== File Attachments ====== */
+.wl-attach-section {
+  margin-bottom: 16px;
+}
+
+.wl-attach-hint {
+  font-size: 0.62rem;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.wl-attach-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wl-attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 25, 26, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  transition: border-color 0.2s;
+}
+
+.wl-attach-chip-new {
+  border-color: rgba(171, 71, 188, 0.25);
+  background: rgba(171, 71, 188, 0.04);
+}
+
+.wl-attach-thumb {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: rgba(58, 59, 62, 0.3);
+}
+
+.wl-attach-pdf-icon {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.08);
+  border-radius: 5px;
+}
+
+.wl-attach-chip-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wl-attach-chip-name {
+  font-size: 0.72rem;
+  color: #cecfd2;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-attach-chip-size {
+  font-size: 0.6rem;
+  color: #6b6c6f;
+  margin-top: 1px;
+}
+
+.wl-attach-chip-remove {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.wl-attach-chip-remove:hover {
+  background: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+}
+
+.wl-attach-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  color: #ef5350;
+  margin-bottom: 6px;
+}
+
+.wl-attach-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px dashed rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #6b6c6f;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wl-attach-btn:hover {
+  border-color: rgba(171, 71, 188, 0.3);
+  color: #ce93d8;
+  background: rgba(171, 71, 188, 0.05);
+}
+
+/* Upload Progress */
+.wl-upload-progress {
+  margin-bottom: 12px;
+}
+
+.wl-upload-progress-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: #ce93d8;
+  margin-bottom: 5px;
+}
+
+.wl-upload-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(58, 59, 62, 0.3);
+  overflow: hidden;
+}
+
+.wl-upload-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ab47bc, #ce93d8);
+  transition: width 0.3s ease;
+}
+
+/* ====== Attachment Gallery (History & Team) ====== */
+.wl-attach-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 14px;
+}
+
+.wl-attach-gallery-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 60px;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px;
+  transition: background 0.15s;
+}
+
+.wl-attach-gallery-item:hover {
+  background: rgba(171, 71, 188, 0.08);
+}
+
+.wl-attach-gallery-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: rgba(58, 59, 62, 0.3);
+  border: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.wl-attach-gallery-pdf {
+  width: 52px;
+  height: 52px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 83, 80, 0.06);
+  border: 1px solid rgba(239, 83, 80, 0.12);
+  color: #ef5350;
+}
+
+.wl-attach-gallery-name {
+  font-size: 0.55rem;
+  color: #6b6c6f;
+  text-align: center;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 56px;
+}
+
+/* ====== Lightbox ====== */
+.wl-lightbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.92);
+  cursor: pointer;
+  position: relative;
+}
+
+.wl-lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  z-index: 10;
+}
+
+.wl-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.wl-lightbox-img {
+  max-width: 90vw;
+  max-height: 80vh;
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
+.wl-lightbox-name {
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 /* ====== Responsive ====== */

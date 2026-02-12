@@ -4,6 +4,8 @@ import {
   collection,
   addDoc,
   getDocs,
+  doc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -236,6 +238,42 @@ export const useCheckinStore = defineStore('checkin', () => {
     }
   }
 
+  // Update today's check-in (edit standup answers)
+  const updateTodayCheckin = async ({ yesterday = '', today = '', blockers = '' }) => {
+    if (!todayCheckin.value?.id) return false
+
+    try {
+      loading.value = true
+      error.value = null
+
+      const updates = {
+        yesterday: yesterday || '',
+        today: today || '',
+        blockers: blockers || '',
+        updatedAt: Timestamp.now()
+      }
+
+      await updateDoc(doc(db, 'checkins', todayCheckin.value.id), updates)
+
+      // Update local state
+      todayCheckin.value = { ...todayCheckin.value, ...updates }
+
+      // Update in history array
+      const idx = checkinHistory.value.findIndex(c => c.id === todayCheckin.value.id)
+      if (idx !== -1) {
+        checkinHistory.value[idx] = { ...checkinHistory.value[idx], ...updates }
+      }
+
+      return true
+    } catch (err) {
+      console.error('Error updating today checkin:', err)
+      error.value = err.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   // Fetch personal check-in history (last N days)
   const fetchCheckinHistory = async (days = 90) => {
     if (!authStore.user?.email) return
@@ -309,6 +347,7 @@ export const useCheckinStore = defineStore('checkin', () => {
     getDateStr,
     fetchTodayCheckin,
     checkIn,
+    updateTodayCheckin,
     fetchCheckinHistory,
     fetchTeamCheckins,
     cleanup

@@ -12,7 +12,13 @@ import {
   limit,
   Timestamp
 } from 'firebase/firestore'
-import { db } from 'boot/firebase'
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+} from 'firebase/storage'
+import { db, storage } from 'boot/firebase'
 import { useAuthStore } from './auth'
 
 export const useWorklogStore = defineStore('worklog', () => {
@@ -20,6 +26,8 @@ export const useWorklogStore = defineStore('worklog', () => {
   const myLogs = ref([])
   const teamLogs = ref([])
   const loading = ref(false)
+  const uploading = ref(false)
+  const uploadProgress = ref(0) // 0-100
   const error = ref(null)
 
   const authStore = useAuthStore()
@@ -57,8 +65,50 @@ export const useWorklogStore = defineStore('worklog', () => {
     }
   }
 
+  // --- File Attachment Helpers ---
+  const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB per file
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
+
+  // Upload files to Firebase Storage and return attachment metadata array
+  const uploadAttachments = async (files, userId, date) => {
+    const results = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const timestamp = Date.now()
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `worklogs/${userId}/${date}/${timestamp}_${safeName}`
+      const fileRef = storageRef(storage, path)
+
+      await uploadBytes(fileRef, file)
+      const url = await getDownloadURL(fileRef)
+
+      results.push({
+        name: file.name,
+        url,
+        size: file.size,
+        type: file.type,
+        path
+      })
+
+      // Update progress
+      uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
+    }
+    return results
+  }
+
+  // Delete a single attachment from Firebase Storage
+  const deleteAttachment = async (storagePath) => {
+    try {
+      const fileRef = storageRef(storage, storagePath)
+      await deleteObject(fileRef)
+    } catch (err) {
+      console.error('Error deleting attachment:', err)
+      // Don't throw — file may already be deleted
+    }
+  }
+
   // Submit or update today's work log
-  const submitLog = async ({ entries, summary = '' }) => {
+  const submitLog = async ({ entries, summary = '', newFiles = [], existingAttachments = [] }) => {
     if (!authStore.user?.email) return false
 
     try {
@@ -74,12 +124,25 @@ export const useWorklogStore = defineStore('worklog', () => {
         return false
       }
 
+      // Upload new files if any
+      let uploadedAttachments = []
+      if (newFiles.length > 0) {
+        uploading.value = true
+        uploadProgress.value = 0
+        uploadedAttachments = await uploadAttachments(newFiles, authStore.user.email, todayStr)
+        uploading.value = false
+      }
+
+      // Merge existing + newly uploaded attachments
+      const allAttachments = [...existingAttachments, ...uploadedAttachments]
+
       if (todayLog.value) {
         // Update existing
         const logRef = doc(db, 'worklogs', todayLog.value.id)
         const updateData = {
           entries: cleanEntries,
           summary: summary.trim(),
+          attachments: allAttachments,
           updatedAt: Timestamp.now()
         }
         await updateDoc(logRef, updateData)
@@ -92,6 +155,7 @@ export const useWorklogStore = defineStore('worklog', () => {
           date: todayStr,
           entries: cleanEntries,
           summary: summary.trim(),
+          attachments: allAttachments,
           submittedAt: Timestamp.now(),
           updatedAt: Timestamp.now()
         }
@@ -204,12 +268,17 @@ export const useWorklogStore = defineStore('worklog', () => {
     myLogs,
     teamLogs,
     loading,
+    uploading,
+    uploadProgress,
     error,
     hasSubmittedToday,
+    MAX_FILE_SIZE,
+    ALLOWED_TYPES,
     getTodayDateStr,
     getDateStr,
     fetchTodayLog,
     submitLog,
+    deleteAttachment,
     fetchMyLogs,
     fetchTeamLogs,
     addAutoEntry,

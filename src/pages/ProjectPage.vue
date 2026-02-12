@@ -1792,11 +1792,28 @@ const handleCreateTask = async () => {
 
     // Create subtasks if any
     if (newTaskSubtasks.value.length > 0) {
+      const currentProject = projectsStore.currentProject
+      const senderName = authStore.user.displayName || authStore.user.email.split('@')[0]
       for (const subtask of newTaskSubtasks.value) {
         await tasksStore.createSubtask({
           ...subtask,
           taskId: taskId
         })
+        // Send notifications to subtask assignees
+        const subtaskAssignees = subtask.assignedTo || []
+        for (const email of subtaskAssignees) {
+          if (email === authStore.user.email) continue
+          await notificationsStore.createNotification({
+            recipientEmail: email,
+            type: 'assign',
+            title: 'คุณได้รับมอบหมาย Subtask ใหม่',
+            message: `${senderName} มอบหมาย Subtask "${subtask.title}" ในงาน "${taskData.title}" ให้คุณ`,
+            projectId: currentProject?.id,
+            projectName: currentProject?.name,
+            taskId: taskId,
+            taskTitle: taskData.title
+          })
+        }
       }
     }
 
@@ -2121,6 +2138,9 @@ const handleCreateSubtask = async () => {
   }
 
   try {
+    const subtaskTitle = newSubtask.value.title
+    const subtaskAssignees = [...(newSubtask.value.assignedTo || [])]
+
     await tasksStore.createSubtask({
       ...newSubtask.value,
       taskId: selectedTask.value.id
@@ -2134,6 +2154,26 @@ const handleCreateSubtask = async () => {
     showCreateSubtaskDialog.value = false
     showInlineSubtaskForm.value = false
     // No need to refresh subtasks manually - real-time subscription will handle it
+
+    // Send notifications to assigned users
+    if (subtaskAssignees.length > 0) {
+      const currentProject = projectsStore.currentProject
+      const senderName = authStore.user.displayName || authStore.user.email.split('@')[0]
+      const parentTitle = selectedTask.value?.title || ''
+      for (const email of subtaskAssignees) {
+        if (email === authStore.user.email) continue // Don't notify yourself
+        await notificationsStore.createNotification({
+          recipientEmail: email,
+          type: 'assign',
+          title: 'คุณได้รับมอบหมาย Subtask ใหม่',
+          message: `${senderName} มอบหมาย Subtask "${subtaskTitle}" ในงาน "${parentTitle}" ให้คุณ`,
+          projectId: currentProject?.id,
+          projectName: currentProject?.name,
+          taskId: selectedTask.value?.id,
+          taskTitle: parentTitle
+        })
+      }
+    }
 
     $q.notify({
       type: 'positive',
@@ -2192,13 +2232,17 @@ const toggleEditMemberSelection = (memberEmail) => {
 }
 
 // Keep old editSubtask for dialog (if still needed elsewhere)
+let originalSubtaskAssignedTo = []
+
 const editSubtask = (subtask) => {
+  const assignedTo = Array.isArray(subtask.assignedTo) ? [...subtask.assignedTo] : (subtask.assignedTo ? [subtask.assignedTo] : [])
+  originalSubtaskAssignedTo = [...assignedTo]
   editingSubtask.value = {
     id: subtask.id,
     title: subtask.title,
     description: subtask.description || '',
     dueDate: subtask.dueDate || null,
-    assignedTo: Array.isArray(subtask.assignedTo) ? [...subtask.assignedTo] : (subtask.assignedTo ? [subtask.assignedTo] : [])
+    assignedTo
   }
   showEditSubtaskDialog.value = true
 }
@@ -2214,12 +2258,14 @@ const startCreateSubtask = () => {
 // New inline edit mode
 const startEditSubtask = (subtask) => {
   editingSubtaskId.value = subtask.id
+  const assignedTo = Array.isArray(subtask.assignedTo) ? [...subtask.assignedTo] : (subtask.assignedTo ? [subtask.assignedTo] : [])
+  originalSubtaskAssignedTo = [...assignedTo]
   editingSubtask.value = {
     id: subtask.id,
     title: subtask.title,
     description: subtask.description || '',
     dueDate: subtask.dueDate || null,
-    assignedTo: Array.isArray(subtask.assignedTo) ? [...subtask.assignedTo] : (subtask.assignedTo ? [subtask.assignedTo] : [])
+    assignedTo
   }
   // Close create form if open
   showInlineSubtaskForm.value = false
@@ -2257,17 +2303,61 @@ const handleUpdateSubtask = async () => {
   }
 
   try {
+    const currentAssigned = editingSubtask.value.assignedTo || []
+    const subtaskTitle = editingSubtask.value.title
+
     await tasksStore.updateSubtask(editingSubtask.value.id, {
       title: editingSubtask.value.title,
       description: editingSubtask.value.description,
       dueDate: editingSubtask.value.dueDate,
-      assignedTo: editingSubtask.value.assignedTo
+      assignedTo: currentAssigned
     })
 
     showEditSubtaskDialog.value = false
     editingSubtaskId.value = null
 
     // No need to refresh subtasks manually - real-time subscription will handle it
+
+    // Send notifications for assignment changes
+    const newlyAssigned = currentAssigned.filter(e => !originalSubtaskAssignedTo.includes(e))
+    const removedAssigned = originalSubtaskAssignedTo.filter(e => !currentAssigned.includes(e))
+    const currentProject = projectsStore.currentProject
+    const senderName = authStore.user.displayName || authStore.user.email.split('@')[0]
+    const parentTitle = selectedTask.value?.title || ''
+
+    if (newlyAssigned.length > 0) {
+      for (const email of newlyAssigned) {
+        if (email === authStore.user.email) continue
+        await notificationsStore.createNotification({
+          recipientEmail: email,
+          type: 'assign',
+          title: 'คุณได้รับมอบหมาย Subtask ใหม่',
+          message: `${senderName} มอบหมาย Subtask "${subtaskTitle}" ในงาน "${parentTitle}" ให้คุณ`,
+          projectId: currentProject?.id,
+          projectName: currentProject?.name,
+          taskId: selectedTask.value?.id,
+          taskTitle: parentTitle
+        })
+      }
+    }
+
+    if (removedAssigned.length > 0) {
+      for (const email of removedAssigned) {
+        if (email === authStore.user.email) continue
+        await notificationsStore.createNotification({
+          recipientEmail: email,
+          type: 'assign',
+          title: 'คุณถูกถอดจาก Subtask',
+          message: `${senderName} ถอดคุณออกจาก Subtask "${subtaskTitle}" ในงาน "${parentTitle}"`,
+          projectId: currentProject?.id,
+          projectName: currentProject?.name,
+          taskId: selectedTask.value?.id,
+          taskTitle: parentTitle
+        })
+      }
+    }
+
+    originalSubtaskAssignedTo = []
 
     $q.notify({
       type: 'positive',

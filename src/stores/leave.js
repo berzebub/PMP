@@ -75,10 +75,6 @@ export const useLeaveStore = defineStore('leave', () => {
     }
     if (durationType === 'custom') {
       const hours = calcCustomHours(customStartTime, customEndTime)
-      // If custom hours exceed 4.5, count as full day
-      if (hours > 4.5) {
-        return { totalHours: WORK_HOURS_PER_DAY, totalDays: 1, cappedToFullDay: true }
-      }
       return { totalHours: hours, totalDays: Math.round((hours / WORK_HOURS_PER_DAY) * 100) / 100 }
     }
     // full_day
@@ -90,8 +86,14 @@ export const useLeaveStore = defineStore('leave', () => {
   const leaveTypes = [
     { value: 'sick', label: 'ลาป่วย', icon: '🤒', color: '#ef5350' },
     { value: 'personal', label: 'ลากิจ', icon: '📋', color: '#ffb74d' },
-    { value: 'vacation', label: 'ลาพักร้อน', icon: '🏖️', color: '#42a5f5' }
+    { value: 'vacation', label: 'ลาพักร้อน', icon: '🏖️', color: '#42a5f5' },
+    { value: 'maternity', label: 'ลาคลอด', icon: '🤱', color: '#ec407a' },
+    { value: 'unpaid', label: 'ลาไม่รับค่าจ้าง', icon: '💼', color: '#9e9e9e' },
+    { value: 'other', label: 'ลาอื่นๆ', icon: '📝', color: '#78909c' }
   ]
+
+  // Leave types that have no quota limit
+  const noQuotaTypes = ['unpaid', 'maternity', 'other']
 
   // Status labels (new 2-step flow)
   const statusLabels = {
@@ -129,6 +131,7 @@ export const useLeaveStore = defineStore('leave', () => {
       // - sick leave: auto-approved (no approval needed)
       // - head / super_admin: skip head step, go straight to HR
       // - employee: start at pending_head
+      // - unpaid: same approval flow as personal/vacation
       let initialStatus
       if (leaveType === 'sick') {
         initialStatus = 'approved'
@@ -383,7 +386,7 @@ export const useLeaveStore = defineStore('leave', () => {
   }
 
   // --- Leave Quota ---
-  const leaveQuota = ref({ sick: 30, personal: 10, vacation: 6 })
+  const leaveQuota = ref({ sick: 30, personal: 10, vacation: 6, maternity: 90, unpaid: 999, other: 999 })
   const quotaMeta = ref({ updatedAt: null, updatedBy: '' })
 
   // --- Individual Quota ---
@@ -395,7 +398,10 @@ export const useLeaveStore = defineStore('leave', () => {
       return {
         sick: myIndividualQuota.value.sick ?? leaveQuota.value.sick,
         personal: myIndividualQuota.value.personal ?? leaveQuota.value.personal,
-        vacation: myIndividualQuota.value.vacation ?? leaveQuota.value.vacation
+        vacation: myIndividualQuota.value.vacation ?? leaveQuota.value.vacation,
+        maternity: 90,
+        unpaid: 999,
+        other: 999
       }
     }
     return { ...leaveQuota.value }
@@ -549,7 +555,7 @@ export const useLeaveStore = defineStore('leave', () => {
     const currentYear = new Date().getFullYear()
     const yearStart = `${currentYear}-01-01`
     const yearEnd = `${currentYear}-12-31`
-    const map = { sick: 0, personal: 0, vacation: 0 }
+    const map = { sick: 0, personal: 0, vacation: 0, maternity: 0, unpaid: 0, other: 0 }
 
     for (const leave of myLeaves.value) {
       // Only count non-rejected, non-cancelled
@@ -659,44 +665,36 @@ export const useLeaveStore = defineStore('leave', () => {
     try {
       loading.value = true
       error.value = null
+      reportLeaves.value = []
 
       const yearStart = `${year}-01-01`
       const yearEnd = `${year}-12-31`
 
-      let q
-
-      if (mode === 'individual' && userId) {
-        q = query(
-          collection(db, 'leaves'),
-          where('userId', '==', userId),
-          where('startDate', '>=', yearStart),
-          where('startDate', '<=', yearEnd),
-          orderBy('startDate', 'desc')
-        )
-      } else if (mode === 'department' && department) {
-        q = query(
-          collection(db, 'leaves'),
-          where('department', '==', department),
-          where('startDate', '>=', yearStart),
-          where('startDate', '<=', yearEnd),
-          orderBy('startDate', 'desc')
-        )
-      } else {
-        // all
-        q = query(
-          collection(db, 'leaves'),
-          where('startDate', '>=', yearStart),
-          where('startDate', '<=', yearEnd),
-          orderBy('startDate', 'desc')
-        )
-      }
+      // For individual and department modes, fetch all leaves for the year
+      // then filter client-side to avoid Firestore composite index requirements
+      const q = query(
+        collection(db, 'leaves'),
+        where('startDate', '>=', yearStart),
+        where('startDate', '<=', yearEnd),
+        orderBy('startDate', 'desc')
+      )
 
       const snapshot = await getDocs(q)
-      reportLeaves.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      let results = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      // Apply client-side filters
+      if (mode === 'individual' && userId) {
+        results = results.filter(leave => leave.userId === userId)
+      } else if (mode === 'department' && department) {
+        results = results.filter(leave => leave.department === department)
+      }
+
+      reportLeaves.value = results
       return reportLeaves.value
     } catch (err) {
       console.error('Error fetching leave report:', err)
       error.value = err.message
+      reportLeaves.value = []
       return []
     } finally {
       loading.value = false
@@ -718,6 +716,7 @@ export const useLeaveStore = defineStore('leave', () => {
     loading,
     error,
     leaveTypes,
+    noQuotaTypes,
     statusLabels,
     durationTypes,
     pendingCount,

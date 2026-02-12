@@ -9,7 +9,9 @@ import {
   query,
   where,
   getDocs,
-  onSnapshot
+  onSnapshot,
+  orderBy,
+  limit
 } from 'firebase/firestore'
 import { db } from 'boot/firebase'
 import { useAuthStore } from './auth'
@@ -18,6 +20,7 @@ export const useProjectsStore = defineStore('projects', () => {
   const projects = ref([])
   const allProjects = ref([])
   const currentProject = ref(null)
+  const myCompletedTasks = ref([])
   const loading = ref(false)
   const error = ref(null)
 
@@ -157,10 +160,11 @@ export const useProjectsStore = defineStore('projects', () => {
   // Add member to project
   const addMember = async (projectId, memberEmail) => {
     try {
+      const normalizedEmail = memberEmail.toLowerCase().trim()
       const project = projects.value.find(p => p.id === projectId)
       if (!project) throw new Error('Project not found')
 
-      const updatedMembers = [...project.members, memberEmail]
+      const updatedMembers = [...project.members, normalizedEmail]
       await updateProject(projectId, { members: updatedMembers })
     } catch (err) {
       error.value = err.message
@@ -197,6 +201,40 @@ export const useProjectsStore = defineStore('projects', () => {
     currentProject.value = null
   }
 
+  // Fetch completed tasks assigned to current user (for portfolio)
+  const fetchMyCompletedTasks = async (maxResults = 200) => {
+    if (!authStore.user?.email) return
+
+    try {
+      const q = query(
+        collection(db, 'tasks'),
+        where('assignedTo', '==', authStore.user.email),
+        where('completed', '==', true),
+        orderBy('completedAt', 'desc'),
+        limit(maxResults)
+      )
+
+      const snapshot = await getDocs(q)
+      const tasks = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      // Enrich with project names
+      const projectIds = [...new Set(tasks.map(t => t.projectId).filter(Boolean))]
+      const projectNameMap = {}
+      for (const pid of projectIds) {
+        const proj = projects.value.find(p => p.id === pid) || allProjects.value.find(p => p.id === pid)
+        if (proj) {
+          projectNameMap[pid] = proj.name
+        }
+      }
+      myCompletedTasks.value = tasks.map(t => ({
+        ...t,
+        projectName: projectNameMap[t.projectId] || ''
+      }))
+    } catch (err) {
+      console.error('Error fetching completed tasks:', err)
+    }
+  }
+
   // Clear error
   const clearError = () => {
     error.value = null
@@ -206,10 +244,12 @@ export const useProjectsStore = defineStore('projects', () => {
     projects,
     allProjects,
     currentProject,
+    myCompletedTasks,
     loading,
     error,
     fetchProjects,
     fetchAllProjects,
+    fetchMyCompletedTasks,
     subscribeToProjects,
     createProject,
     updateProject,

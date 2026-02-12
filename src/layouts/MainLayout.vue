@@ -72,6 +72,12 @@
             </div>
           </Teleport>
 
+          <!-- Help Button -->
+          <q-btn v-if="currentHelpContent" flat round dense class="help-btn" @click="showHelpDialog = true">
+            <q-icon name="help_outline" size="22px" />
+            <q-tooltip>คู่มือการใช้งาน</q-tooltip>
+          </q-btn>
+
           <q-btn-dropdown flat no-caps class="profile-dropdown bg-transparent" menu-class="profile-menu-popup">
             <template v-slot:label>
               <div class="row items-center no-wrap">
@@ -151,27 +157,14 @@
             <span class="nav-label">Dashboard</span>
           </div> -->
 
-          <!-- Projects Section -->
-          <div class="nav-section-label">
-            <span>Projects</span>
-            <q-badge :label="projectsStore.projects.length" class="nav-section-badge" />
-          </div>
-
-          <div class="nav-project-list">
-            <div v-for="project in projectsStore.projects" :key="project.id"
-              class="nav-item nav-project-item"
-              :class="{ 'nav-active': currentRoute.startsWith(`/project/${project.id}`) }"
-              @click="selectProject(project)">
-              <div class="nav-project-dot"
-                :style="{ background: currentRoute.startsWith(`/project/${project.id}`) ? '#5c9ce6' : '#3a3b3e' }">
-              </div>
-              <span class="nav-label">{{ project.name }}</span>
+          <!-- Projects -->
+          <div class="nav-item" :class="{ 'nav-active': currentRoute === '/' }"
+            @click="navigateTo('/')">
+            <div class="nav-icon" style="color: #5c9ce6;">
+              <q-icon name="folder" size="20px" />
             </div>
-
-            <div class="nav-item nav-add-project" @click="showCreateProjectDialog = true">
-              <q-icon name="add" size="16px" style="color: #6b6c6f;" />
-              <span class="nav-label" style="color: #6b6c6f;">New Project</span>
-            </div>
+            <span class="nav-label">Projects</span>
+            <q-badge v-if="projectsStore.projects.length > 0" :label="projectsStore.projects.length" class="nav-section-badge" />
           </div>
 
           <!-- Divider -->
@@ -215,6 +208,15 @@
             <span v-if="!worklogStore.hasSubmittedToday" class="nav-badge-alert"></span>
           </div>
 
+          <!-- Portfolio -->
+          <div class="nav-item" :class="{ 'nav-active': currentRoute === '/portfolio' }"
+            @click="navigateTo('/portfolio')">
+            <div class="nav-icon" style="color: #7e57c2;">
+              <q-icon name="work_history" size="20px" />
+            </div>
+            <span class="nav-label">Portfolio</span>
+          </div>
+
           <!-- Company Calendar -->
           <div class="nav-item" :class="{ 'nav-active': currentRoute === '/calendar' }"
             @click="navigateTo('/calendar')">
@@ -222,6 +224,15 @@
               <q-icon name="calendar_month" size="20px" />
             </div>
             <span class="nav-label">Company Calendar</span>
+          </div>
+
+          <!-- Arcade -->
+          <div class="nav-item" :class="{ 'nav-active': currentRoute.startsWith('/games') }"
+            @click="navigateTo('/games')">
+            <div class="nav-icon" style="color: #ec407a;">
+              <q-icon name="sports_esports" size="20px" />
+            </div>
+            <span class="nav-label">Arcade</span>
           </div>
 
           <!-- Admin (HR sees Leave Report only, super_admin sees all) -->
@@ -348,41 +359,89 @@
             </div>
           </div>
 
-          <!-- Answers cards -->
-          <div class="done-answers">
-            <div class="done-answer-card">
-              <div class="done-answer-header">
-                <span class="done-answer-icon">⏪</span>
-                <span class="done-answer-title">เมื่อวานทำอะไร?</span>
+          <!-- ====== View Mode ====== -->
+          <template v-if="!isEditingCheckin">
+            <!-- Answers cards -->
+            <div class="done-answers">
+              <div class="done-answer-card">
+                <div class="done-answer-header">
+                  <span class="done-answer-icon">⏪</span>
+                  <span class="done-answer-title">เมื่อวานทำอะไร?</span>
+                </div>
+                <div class="done-answer-text">{{ checkinStore.todayCheckin?.yesterday || checkinStore.todayCheckin?.note || '-' }}</div>
               </div>
-              <div class="done-answer-text">{{ checkinStore.todayCheckin?.yesterday || checkinStore.todayCheckin?.note || '-' }}</div>
-            </div>
-            <div class="done-answer-card">
-              <div class="done-answer-header">
-                <span class="done-answer-icon">🎯</span>
-                <span class="done-answer-title">วันนี้จะทำอะไร?</span>
+              <div class="done-answer-card">
+                <div class="done-answer-header">
+                  <span class="done-answer-icon">🎯</span>
+                  <span class="done-answer-title">วันนี้จะทำอะไร?</span>
+                </div>
+                <div class="done-answer-text">{{ checkinStore.todayCheckin?.today || '-' }}</div>
               </div>
-              <div class="done-answer-text">{{ checkinStore.todayCheckin?.today || '-' }}</div>
-            </div>
-            <div class="done-answer-card" v-if="checkinStore.todayCheckin?.blockers">
-              <div class="done-answer-header">
-                <span class="done-answer-icon">🚧</span>
-                <span class="done-answer-title">ปัญหา / อุปสรรค</span>
+              <div class="done-answer-card" v-if="checkinStore.todayCheckin?.blockers">
+                <div class="done-answer-header">
+                  <span class="done-answer-icon">🚧</span>
+                  <span class="done-answer-title">ปัญหา / อุปสรรค</span>
+                </div>
+                <div class="done-answer-text">{{ checkinStore.todayCheckin.blockers }}</div>
               </div>
-              <div class="done-answer-text">{{ checkinStore.todayCheckin.blockers }}</div>
             </div>
-          </div>
 
-          <div class="done-time">
-            <q-icon name="schedule" size="14px" />
-            เช็คชื่อเวลา {{ formatCheckinTime(checkinStore.todayCheckin?.checkedInAt) }}
-            <span v-if="checkinStore.todayCheckin?.mood" style="margin-left: 6px;">{{ checkinStore.todayCheckin.mood }}</span>
-          </div>
+            <div class="done-time">
+              <q-icon name="schedule" size="14px" />
+              เช็คชื่อเวลา {{ formatCheckinTime(checkinStore.todayCheckin?.checkedInAt) }}
+              <span v-if="checkinStore.todayCheckin?.mood" style="margin-left: 6px;">{{ checkinStore.todayCheckin.mood }}</span>
+            </div>
 
-          <button class="checkin-history-btn" @click="goToCheckinHistory">
-            <q-icon name="history" size="16px" />
-            <span>ดูประวัติการเช็คชื่อ</span>
-          </button>
+            <div class="done-actions-row">
+              <button class="checkin-edit-btn" @click="startEditCheckin">
+                <q-icon name="edit" size="16px" />
+                <span>แก้ไขข้อความ</span>
+              </button>
+              <button class="checkin-history-btn" @click="goToCheckinHistory">
+                <q-icon name="history" size="16px" />
+                <span>ดูประวัติการเช็คชื่อ</span>
+              </button>
+            </div>
+          </template>
+
+          <!-- ====== Edit Mode ====== -->
+          <template v-else>
+            <div class="done-edit-section">
+              <div class="done-edit-field">
+                <div class="done-edit-label">
+                  <span>⏪</span> เมื่อวานทำอะไร?
+                </div>
+                <textarea v-model="editYesterday" class="checkin-textarea done-edit-textarea"
+                  rows="2" maxlength="500" placeholder="สรุปสิ่งที่ทำเมื่อวาน..."></textarea>
+              </div>
+              <div class="done-edit-field">
+                <div class="done-edit-label">
+                  <span>🎯</span> วันนี้จะทำอะไร?
+                </div>
+                <textarea v-model="editToday" class="checkin-textarea done-edit-textarea"
+                  rows="2" maxlength="500" placeholder="วางแผนงานสำหรับวันนี้..."></textarea>
+              </div>
+              <div class="done-edit-field">
+                <div class="done-edit-label">
+                  <span>🚧</span> ปัญหา / อุปสรรค
+                </div>
+                <textarea v-model="editBlockers" class="checkin-textarea done-edit-textarea"
+                  rows="2" maxlength="500" placeholder="ถ้าไม่มีก็เว้นว่างได้"></textarea>
+              </div>
+            </div>
+
+            <div class="done-edit-actions">
+              <button class="done-edit-cancel-btn" @click="isEditingCheckin = false">
+                <q-icon name="close" size="16px" />
+                <span>ยกเลิก</span>
+              </button>
+              <button class="done-edit-save-btn" :disabled="checkinStore.loading" @click="handleSaveEditCheckin">
+                <q-spinner v-if="checkinStore.loading" size="16px" color="white" />
+                <q-icon v-else name="check" size="16px" />
+                <span>{{ checkinStore.loading ? 'กำลังบันทึก...' : 'บันทึก' }}</span>
+              </button>
+            </div>
+          </template>
         </div>
 
         <!-- ====== Wizard Steps (not yet checked in) ====== -->
@@ -642,6 +701,79 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+    <!-- Help Dialog -->
+    <q-dialog v-model="showHelpDialog" position="right" full-height>
+      <div class="help-panel">
+        <!-- Header -->
+        <div class="help-panel-header">
+          <div class="help-panel-header-left">
+            <div class="help-panel-icon" :style="{ background: (currentHelpContent?.color || '#5c9ce6') + '15', color: currentHelpContent?.color || '#5c9ce6' }">
+              <q-icon :name="currentHelpContent?.icon || 'help'" size="22px" />
+            </div>
+            <div>
+              <div class="help-panel-title">{{ currentHelpContent?.title || 'Help' }}</div>
+              <div class="help-panel-subtitle">คู่มือการใช้งาน</div>
+            </div>
+          </div>
+          <button class="help-panel-close" @click="showHelpDialog = false">
+            <q-icon name="close" size="18px" />
+          </button>
+        </div>
+
+        <!-- Intro -->
+        <div class="help-panel-body">
+          <div v-if="currentHelpContent?.intro" class="help-intro">
+            <q-icon name="lightbulb" size="16px" style="color: #ffb74d; flex-shrink: 0;" />
+            <span>{{ currentHelpContent.intro }}</span>
+          </div>
+
+          <!-- Sections -->
+          <div v-for="(section, sIdx) in (currentHelpContent?.sections || [])" :key="sIdx" class="help-section">
+            <div class="help-section-header" @click="toggleHelpSection(sIdx)">
+              <div class="help-section-header-left">
+                <div class="help-section-icon" :style="{ color: currentHelpContent?.color || '#5c9ce6' }">
+                  <q-icon :name="section.icon || 'info'" size="16px" />
+                </div>
+                <span class="help-section-title">{{ section.title }}</span>
+              </div>
+              <q-icon :name="openHelpSections.includes(sIdx) ? 'expand_less' : 'expand_more'" size="18px" class="help-section-chevron" />
+            </div>
+
+            <div v-if="openHelpSections.includes(sIdx)" class="help-section-body">
+              <p v-if="section.description" class="help-section-desc">{{ section.description }}</p>
+
+              <!-- Steps list -->
+              <div v-if="section.steps" class="help-steps">
+                <div v-for="(step, idx) in section.steps" :key="idx" class="help-step">
+                  <div class="help-step-num">{{ idx + 1 }}</div>
+                  <span>{{ step }}</span>
+                </div>
+              </div>
+
+              <!-- Items list (label + desc) -->
+              <div v-if="section.items" class="help-items">
+                <div v-for="(item, idx) in section.items" :key="idx" class="help-item">
+                  <div class="help-item-label">{{ item.label }}</div>
+                  <div class="help-item-desc">{{ item.desc }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tips -->
+          <div v-if="currentHelpContent?.tips?.length" class="help-tips">
+            <div class="help-tips-header">
+              <q-icon name="tips_and_updates" size="16px" style="color: #42a5f5;" />
+              <span>เคล็ดลับ</span>
+            </div>
+            <div v-for="(tip, idx) in currentHelpContent.tips" :key="idx" class="help-tip">
+              <q-icon name="arrow_right" size="14px" style="color: #42a5f5; flex-shrink: 0;" />
+              <span>{{ tip }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </q-dialog>
   </q-layout>
 </template>
 
@@ -655,6 +787,7 @@ import { useProjectsStore } from 'stores/projects'
 import { useNotificationsStore } from 'stores/notifications'
 import { useCheckinStore } from 'stores/checkin'
 import { useWorklogStore } from 'stores/worklog'
+import { getHelpForRoute } from 'src/data/helpContent'
 
 const router = useRouter()
 const route = useRoute()
@@ -667,6 +800,8 @@ const worklogStore = useWorklogStore()
 const leftDrawerOpen = ref(false)
 const showCreateProjectDialog = ref(false)
 const showNotifPanel = ref(false)
+const showHelpDialog = ref(false)
+const openHelpSections = ref([0])
 const showCheckinDialog = ref(false)
 const checkinStep = ref(1)
 const checkinYesterday = ref('')
@@ -674,6 +809,10 @@ const checkinToday = ref('')
 const checkinBlockers = ref('')
 const checkinMood = ref('')
 const showCelebration = ref(false)
+const isEditingCheckin = ref(false)
+const editYesterday = ref('')
+const editToday = ref('')
+const editBlockers = ref('')
 const showProfileDialog = ref(false)
 const profileForm = ref({ firstName: '', lastName: '' })
 const profileSaveSuccess = ref(false)
@@ -735,6 +874,16 @@ onUnmounted(() => {
 })
 
 const currentRoute = computed(() => route.path)
+const currentHelpContent = computed(() => getHelpForRoute(route.path))
+
+const toggleHelpSection = (idx) => {
+  const i = openHelpSections.value.indexOf(idx)
+  if (i > -1) {
+    openHelpSections.value.splice(i, 1)
+  } else {
+    openHelpSections.value.push(idx)
+  }
+}
 
 const toggleLeftDrawer = () => {
   leftDrawerOpen.value = !leftDrawerOpen.value
@@ -854,6 +1003,7 @@ const handleLogout = async () => {
 
 // Check-in helpers
 const handleCheckinBtnClick = () => {
+  isEditingCheckin.value = false
   showCheckinDialog.value = true
 }
 
@@ -872,6 +1022,24 @@ const handleCheckIn = async () => {
     checkinToday.value = ''
     checkinBlockers.value = ''
     checkinMood.value = ''
+  }
+}
+
+const startEditCheckin = () => {
+  editYesterday.value = checkinStore.todayCheckin?.yesterday || checkinStore.todayCheckin?.note || ''
+  editToday.value = checkinStore.todayCheckin?.today || ''
+  editBlockers.value = checkinStore.todayCheckin?.blockers || ''
+  isEditingCheckin.value = true
+}
+
+const handleSaveEditCheckin = async () => {
+  const success = await checkinStore.updateTodayCheckin({
+    yesterday: editYesterday.value.trim(),
+    today: editToday.value.trim(),
+    blockers: editBlockers.value.trim()
+  })
+  if (success) {
+    isEditingCheckin.value = false
   }
 }
 
@@ -1591,14 +1759,25 @@ const handleNotifClick = async (notif) => {
   cursor: not-allowed;
 }
 
+/* Done actions row */
+.done-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.done-actions-row .checkin-history-btn {
+  margin-top: 0;
+}
+
+.checkin-edit-btn,
 .checkin-history-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 100%;
+  flex: 1;
   padding: 10px;
-  margin-top: 10px;
   border-radius: 8px;
   border: 1px dashed rgba(58, 59, 62, 0.4);
   background: transparent;
@@ -1609,10 +1788,100 @@ const handleNotifClick = async (notif) => {
   transition: all 0.2s ease;
 }
 
+.checkin-edit-btn:hover {
+  border-color: rgba(255, 183, 77, 0.3);
+  color: #ffb74d;
+  background: rgba(255, 183, 77, 0.05);
+}
+
 .checkin-history-btn:hover {
   border-color: rgba(92, 156, 230, 0.3);
   color: #5c9ce6;
   background: rgba(92, 156, 230, 0.05);
+}
+
+/* ====== Edit Mode ====== */
+.done-edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.done-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.done-edit-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9e9e9e;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.done-edit-textarea {
+  min-height: 48px !important;
+  font-size: 0.78rem !important;
+}
+
+.done-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.done-edit-cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  padding: 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #9e9e9e;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.done-edit-cancel-btn:hover {
+  border-color: rgba(239, 83, 80, 0.3);
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.05);
+}
+
+.done-edit-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  padding: 9px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.8), rgba(56, 142, 60, 0.8));
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.done-edit-save-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.95), rgba(56, 142, 60, 0.95));
+  box-shadow: 0 2px 10px rgba(76, 175, 80, 0.2);
+}
+
+.done-edit-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ====== Notification Bell ====== */
@@ -2367,6 +2636,257 @@ const handleNotifClick = async (notif) => {
   font-weight: 600;
   font-size: 0.8rem;
   border-radius: 8px;
+}
+
+/* ====== Help Button ====== */
+.help-btn {
+  color: #6b6c6f !important;
+  transition: color 0.2s;
+}
+.help-btn:hover {
+  color: #42a5f5 !important;
+}
+
+/* ====== Help Panel (Right Drawer Dialog) ====== */
+.help-panel {
+  width: 420px;
+  max-width: 95vw;
+  height: 100%;
+  background: rgba(24, 25, 26, 0.98);
+  border-left: 1px solid rgba(58, 59, 62, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.help-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.25);
+  flex-shrink: 0;
+}
+
+.help-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.help-panel-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-panel-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e0e1e4;
+}
+
+.help-panel-subtitle {
+  font-size: 0.65rem;
+  color: #6b6c6f;
+  margin-top: 1px;
+}
+
+.help-panel-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(58, 59, 62, 0.2);
+  color: #6b6c6f;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.help-panel-close:hover {
+  background: rgba(58, 59, 62, 0.4);
+  color: #9e9e9e;
+}
+
+.help-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.help-panel-body::-webkit-scrollbar { width: 3px; }
+.help-panel-body::-webkit-scrollbar-thumb { background: rgba(58, 59, 62, 0.3); border-radius: 2px; }
+
+/* Intro */
+.help-intro {
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 183, 77, 0.06);
+  border: 1px solid rgba(255, 183, 77, 0.12);
+  font-size: 0.74rem;
+  color: #9e9e9e;
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+
+/* Sections (Accordion) */
+.help-section {
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: rgba(30, 33, 36, 0.6);
+  border: 1px solid rgba(58, 59, 62, 0.2);
+  overflow: hidden;
+}
+
+.help-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.help-section-header:hover {
+  background: rgba(58, 59, 62, 0.1);
+}
+
+.help-section-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-section-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(92, 156, 230, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.help-section-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cecfd2;
+}
+
+.help-section-chevron {
+  color: #4a4b4e;
+  transition: color 0.15s;
+}
+
+.help-section-body {
+  padding: 0 14px 14px;
+}
+
+.help-section-desc {
+  font-size: 0.72rem;
+  color: #6b6c6f;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+/* Steps (numbered) */
+.help-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: #9e9e9e;
+  line-height: 1.5;
+}
+
+.help-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(92, 156, 230, 0.12);
+  color: #5c9ce6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Items (label + description) */
+.help-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(24, 25, 26, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.15);
+}
+
+.help-item-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #cecfd2;
+  margin-bottom: 2px;
+}
+
+.help-item-desc {
+  font-size: 0.68rem;
+  color: #6b6c6f;
+  line-height: 1.45;
+}
+
+/* Tips */
+.help-tips {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(66, 165, 245, 0.05);
+  border: 1px solid rgba(66, 165, 245, 0.1);
+}
+
+.help-tips-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #42a5f5;
+  margin-bottom: 10px;
+}
+
+.help-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #9e9e9e;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.help-tip:last-child {
+  margin-bottom: 0;
 }
 </style>
 

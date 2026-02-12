@@ -118,11 +118,16 @@
           </div>
           <!-- Individual mode: quota info -->
           <div v-if="mode === 'individual' && individualQuota" class="report-quota-info">
-            <span>โควต้า {{ individualQuota[t.value] || 0 }} วัน</span>
-            <span class="report-quota-sep">|</span>
-            <span :class="{ 'report-quota-warning': (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0) <= 0 }">
-              คงเหลือ {{ formatDays(Math.max(0, (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0))) }} วัน
-            </span>
+            <template v-if="leaveStore.noQuotaTypes.includes(t.value)">
+              <span>โควต้า {{ t.value === 'maternity' ? '90 วัน/ครั้ง' : 'ไม่จำกัด' }}</span>
+            </template>
+            <template v-else>
+              <span>โควต้า {{ individualQuota[t.value] || 0 }} วัน</span>
+              <span class="report-quota-sep">|</span>
+              <span :class="{ 'report-quota-warning': (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0) <= 0 }">
+                คงเหลือ {{ formatDays(Math.max(0, (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0))) }} วัน
+              </span>
+            </template>
           </div>
           <div class="report-summary-bar">
             <div class="report-summary-bar-fill" :style="{ width: getBarWidth(t.value), background: t.color }"></div>
@@ -369,7 +374,7 @@ const fetchReport = async () => {
   if (mode.value === 'individual' && selectedUser.value) {
     const iq = await leaveStore.fetchUserIndividualQuota(selectedUser.value)
     if (iq) {
-      individualQuota.value = { sick: iq.sick, personal: iq.personal, vacation: iq.vacation }
+      individualQuota.value = { sick: iq.sick, personal: iq.personal, vacation: iq.vacation, maternity: 90, unpaid: 999, other: 999 }
     } else {
       individualQuota.value = { ...leaveStore.leaveQuota }
     }
@@ -380,7 +385,7 @@ const fetchReport = async () => {
 
 // --- Summary Computeds ---
 const summaryByType = computed(() => {
-  const map = { sick: { days: 0, count: 0 }, personal: { days: 0, count: 0 }, vacation: { days: 0, count: 0 } }
+  const map = { sick: { days: 0, count: 0 }, personal: { days: 0, count: 0 }, vacation: { days: 0, count: 0 }, maternity: { days: 0, count: 0 }, unpaid: { days: 0, count: 0 }, other: { days: 0, count: 0 } }
   for (const leave of reportLeaves.value) {
     if (leave.status === 'rejected' || leave.status === 'cancelled') continue
     const type = leave.leaveType
@@ -506,7 +511,7 @@ const typeChartData = computed(() => {
 const monthlyChartData = computed(() => {
   const monthBuckets = {}
   for (let i = 0; i < 12; i++) {
-    monthBuckets[i] = { sick: 0, personal: 0, vacation: 0 }
+    monthBuckets[i] = { sick: 0, personal: 0, vacation: 0, maternity: 0, unpaid: 0, other: 0 }
   }
   for (const leave of reportLeaves.value) {
     if (leave.status === 'rejected' || leave.status === 'cancelled') continue
@@ -556,23 +561,23 @@ const statusChartData = computed(() => {
 // Chart 4: Dept ranking OR individual quota usage
 const fourthChartData = computed(() => {
   if (mode.value === 'individual' && individualQuota.value) {
-    // Quota usage bars (used vs remaining)
-    const types = leaveStore.leaveTypes
+    // Quota usage bars (used vs remaining) — only for quota-based types
+    const quotaTypes = leaveStore.leaveTypes.filter(t => !leaveStore.noQuotaTypes.includes(t.value))
     return {
-      labels: types.map(t => t.label),
+      labels: quotaTypes.map(t => t.label),
       datasets: [
         {
           label: 'ใช้ไปแล้ว',
-          data: types.map(t => summaryByType.value[t.value]?.days || 0),
-          backgroundColor: types.map(t => t.color + 'aa'),
-          borderColor: types.map(t => t.color),
+          data: quotaTypes.map(t => summaryByType.value[t.value]?.days || 0),
+          backgroundColor: quotaTypes.map(t => t.color + 'aa'),
+          borderColor: quotaTypes.map(t => t.color),
           borderWidth: 1,
           borderRadius: 4,
           maxBarThickness: 32
         },
         {
           label: 'คงเหลือ',
-          data: types.map(t => Math.max(0, (individualQuota.value[t.value] || 0) - (summaryByType.value[t.value]?.days || 0))),
+          data: quotaTypes.map(t => Math.max(0, (individualQuota.value[t.value] || 0) - (summaryByType.value[t.value]?.days || 0))),
           backgroundColor: 'rgba(58, 59, 62, 0.4)',
           borderColor: 'rgba(58, 59, 62, 0.6)',
           borderWidth: 1,

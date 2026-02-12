@@ -112,7 +112,7 @@
 
       <!-- Quota Summary Cards -->
       <div class="leave-quota-row">
-        <div v-for="t in leaveStore.leaveTypes" :key="t.value" class="leave-quota-card"
+        <div v-for="t in leaveStore.leaveTypes.filter(lt => !leaveStore.noQuotaTypes.includes(lt.value))" :key="t.value" class="leave-quota-card"
           :class="{ 'leave-quota-exhausted': leaveStore.getRemainingDays(t.value) <= 0 }">
           <div class="leave-quota-card-header">
             <span class="leave-quota-card-icon">{{ t.icon }}</span>
@@ -190,13 +190,16 @@
                   class="leave-type-btn"
                   :class="{
                     'leave-type-selected': form.leaveType === t.value,
-                    'leave-type-disabled': leaveStore.getRemainingDays(t.value) <= 0
+                    'leave-type-disabled': !leaveStore.noQuotaTypes.includes(t.value) && leaveStore.getRemainingDays(t.value) <= 0
                   }"
-                  :disabled="leaveStore.getRemainingDays(t.value) <= 0"
+                  :disabled="!leaveStore.noQuotaTypes.includes(t.value) && leaveStore.getRemainingDays(t.value) <= 0"
                   @click="selectLeaveType(t.value)">
                   <span class="leave-type-icon">{{ t.icon }}</span>
                   <span class="leave-type-label">{{ t.label }}</span>
-                  <span v-if="leaveStore.getRemainingDays(t.value) <= 0" class="leave-type-no-quota">หมดโควต้า</span>
+                  <span v-if="leaveStore.noQuotaTypes.includes(t.value)" class="leave-type-remaining">
+                    {{ t.value === 'maternity' ? 'ไม่เกิน 90 วัน' : 'ไม่จำกัด' }}
+                  </span>
+                  <span v-else-if="leaveStore.getRemainingDays(t.value) <= 0" class="leave-type-no-quota">หมดโควต้า</span>
                   <span v-else class="leave-type-remaining">เหลือ {{ leaveStore.getRemainingDays(t.value) }} วัน</span>
                 </button>
               </div>
@@ -252,20 +255,11 @@
             <!-- Custom time preview -->
             <div v-if="form.durationType === 'custom' && showDurationSelector && customHoursPreview > 0" class="leave-custom-preview">
               <q-icon name="schedule" size="14px" />
-              <template v-if="isCappedToFullDay">
-                <span>{{ customHoursPreview }} ชั่วโมง &rarr; <strong>นับเป็นลาเต็มวัน (1 วัน)</strong></span>
-                <span class="leave-cap-note">
-                  <q-icon name="info_outline" size="12px" />
-                  เกิน 4.5 ชม. ถือเป็นลาเต็มวัน
-                </span>
-              </template>
-              <template v-else>
-                <span>{{ customHoursPreview }} ชั่วโมง ({{ customDaysPreview }} วัน)</span>
-                <span v-if="hasLunchDeduction" class="leave-lunch-note">
-                  <q-icon name="info_outline" size="12px" />
-                  หักเวลาพักเที่ยงแล้ว
-                </span>
-              </template>
+              <span>{{ customHoursPreview }} ชั่วโมง ({{ customDaysPreview }} วัน)</span>
+              <span v-if="hasLunchDeduction" class="leave-lunch-note">
+                <q-icon name="info_outline" size="12px" />
+                หักเวลาพักเที่ยงแล้ว
+              </span>
             </div>
 
             <!-- Date range -->
@@ -286,7 +280,13 @@
               <span>ลาทั้งหมด <strong>{{ leaveDays }}</strong> วัน
                 <template v-if="leaveHours > 0">({{ leaveHours }} ชม.)</template>
               </span>
-              <template v-if="form.leaveType && leaveStore.getRemainingDays(form.leaveType) < leaveDays">
+              <template v-if="form.leaveType === 'maternity' && leaveDays > 90">
+                <span class="leave-days-warning">
+                  <q-icon name="warning" size="14px" />
+                  ลาคลอดครั้งละไม่เกิน 90 วัน
+                </span>
+              </template>
+              <template v-else-if="form.leaveType && !leaveStore.noQuotaTypes.includes(form.leaveType) && leaveStore.getRemainingDays(form.leaveType) < leaveDays">
                 <span class="leave-days-warning">
                   <q-icon name="warning" size="14px" />
                   เกินโควต้าคงเหลือ ({{ leaveStore.getRemainingDays(form.leaveType) }} วัน)
@@ -296,9 +296,13 @@
 
             <!-- Details -->
             <div class="leave-field">
-              <label class="leave-field-label">รายละเอียด (ไม่บังคับ)</label>
+              <label class="leave-field-label">
+                รายละเอียด
+                <span v-if="form.leaveType === 'other'" class="leave-required">* (จำเป็นสำหรับลาอื่นๆ)</span>
+                <span v-else>(ไม่บังคับ)</span>
+              </label>
               <textarea v-model="form.details" class="leave-textarea"
-                placeholder="ระบุรายละเอียดเพิ่มเติม เช่น เหตุผลการลา..."
+                :placeholder="form.leaveType === 'other' ? 'ระบุประเภทการลาและเหตุผล เช่น ลาบวช, ลาเพื่อรับราชการทหาร...' : 'ระบุรายละเอียดเพิ่มเติม เช่น เหตุผลการลา...'"
                 rows="3" maxlength="500"></textarea>
               <div class="leave-char-count">{{ form.details.length }}/500</div>
             </div>
@@ -861,9 +865,10 @@ onMounted(async () => {
 // Work hour options for time picker (9-17)
 const workHourOptions = [9, 10, 11, 12, 13, 14, 15, 16, 17]
 
-// Whether duration selector should be shown (sick/personal only)
+// Whether duration selector should be shown (sick/personal/other only; vacation, maternity & unpaid are always full-day)
 const showDurationSelector = computed(() => {
-  return form.value.leaveType === 'sick' || form.value.leaveType === 'personal'
+  const t = form.value.leaveType
+  return t === 'sick' || t === 'personal' || t === 'other'
 })
 
 // Whether current selection is partial day
@@ -879,13 +884,7 @@ const customHoursPreview = computed(() => {
 
 const customDaysPreview = computed(() => {
   if (customHoursPreview.value <= 0) return 0
-  if (customHoursPreview.value > 4.5) return 1 // capped to full day
   return Math.round((customHoursPreview.value / leaveStore.WORK_HOURS_PER_DAY) * 100) / 100
-})
-
-// Whether custom hours exceed 4.5 and are capped to full day
-const isCappedToFullDay = computed(() => {
-  return form.value.durationType === 'custom' && customHoursPreview.value > 4.5
 })
 
 // Check if custom time range overlaps lunch
@@ -939,8 +938,8 @@ const isFormValid = computed(() => {
 // Select leave type handler
 const selectLeaveType = (type) => {
   form.value.leaveType = type
-  // Reset to full_day if vacation
-  if (type === 'vacation') {
+  // Reset to full_day if vacation, maternity or unpaid (always full-day leave)
+  if (type === 'vacation' || type === 'maternity' || type === 'unpaid') {
     form.value.durationType = 'full_day'
   }
 }
@@ -1069,14 +1068,28 @@ const handleSubmit = async () => {
     return
   }
 
-  // Validate quota
-  const remaining = leaveStore.getRemainingDays(form.value.leaveType)
-  if (remaining <= 0) {
-    formError.value = `โควต้า${getTypeInfo(form.value.leaveType).label}หมดแล้ว ไม่สามารถส่งใบลาได้`
+  // Validate quota (skip for no-quota types: unpaid, maternity, other)
+  if (!leaveStore.noQuotaTypes.includes(form.value.leaveType)) {
+    const remaining = leaveStore.getRemainingDays(form.value.leaveType)
+    if (remaining <= 0) {
+      formError.value = `โควต้า${getTypeInfo(form.value.leaveType).label}หมดแล้ว ไม่สามารถส่งใบลาได้`
+      return
+    }
+    if (leaveDays.value > remaining) {
+      formError.value = `จำนวนวันลา (${leaveDays.value} วัน) เกินโควต้าคงเหลือ (${remaining} วัน)`
+      return
+    }
+  }
+
+  // Validate maternity leave: max 90 days per request
+  if (form.value.leaveType === 'maternity' && leaveDays.value > 90) {
+    formError.value = 'ลาคลอดครั้งละไม่เกิน 90 วัน'
     return
   }
-  if (leaveDays.value > remaining) {
-    formError.value = `จำนวนวันลา (${leaveDays.value} วัน) เกินโควต้าคงเหลือ (${remaining} วัน)`
+
+  // Validate "other" leave: require details
+  if (form.value.leaveType === 'other' && !form.value.details.trim()) {
+    formError.value = 'กรุณาระบุรายละเอียดสำหรับการลาอื่นๆ'
     return
   }
 

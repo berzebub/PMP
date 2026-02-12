@@ -462,9 +462,15 @@ const leaveTypeMap = {
   'ลาป่วย': 'sick',
   'ลากิจ': 'personal',
   'ลาพักร้อน': 'vacation',
+  'ลาคลอด': 'maternity',
+  'ลาไม่รับค่าจ้าง': 'unpaid',
+  'ลาอื่นๆ': 'other',
   'sick': 'sick',
   'personal': 'personal',
-  'vacation': 'vacation'
+  'vacation': 'vacation',
+  'maternity': 'maternity',
+  'unpaid': 'unpaid',
+  'other': 'other'
 }
 
 const getLeaveTypeLabel = (type) => {
