@@ -12,12 +12,7 @@
             <div class="exp-header-subtitle">ขออนุมัติเบิกค่าใช้จ่าย</div>
           </div>
         </div>
-        <div class="exp-header-right">
-          <button class="exp-back-btn" @click="$router.back()">
-            <q-icon name="arrow_back" size="18px" />
-            <span>กลับ</span>
-          </button>
-        </div>
+        <div class="exp-header-right"></div>
       </div>
 
       <!-- HR Approval Section -->
@@ -725,6 +720,12 @@ const handleReject = async () => {
       message: `ใบเบิก ${formatMoney(rejectingExpense.value.totalAmount)} บาท ไม่ได้รับการอนุมัติ${rejectReason.value ? ' — ' + rejectReason.value : ''}`
     })
     showRejectDialog.value = false
+
+    // Auto re-fetch history to keep data up-to-date
+    await expenseStore.fetchMyExpenses()
+    if (expenseStore.allExpenses.length > 0) {
+      await expenseStore.fetchAllExpenses()
+    }
   }
 }
 
@@ -803,6 +804,12 @@ const handleCEOApprove = async (exp) => {
       title: 'CEO อนุมัติใบเบิกค่าใช้จ่ายแล้ว',
       message: `ใบเบิก ${formatMoney(exp.totalAmount)} บาท ได้รับการอนุมัติจาก CEO แล้ว รอ HR จ่ายเงิน`
     })
+
+    // Auto re-fetch history to keep data up-to-date
+    await expenseStore.fetchMyExpenses()
+    if (expenseStore.allExpenses.length > 0) {
+      await expenseStore.fetchAllExpenses()
+    }
   }
 }
 
@@ -841,6 +848,12 @@ const handlePay = async () => {
       message: `ใบเบิก ${formatMoney(payingExpense.value.totalAmount)} บาท ได้รับการจ่ายเงินแล้ว (${payMethod.value === 'transfer' ? 'โอนเงิน' : 'เงินสด'})`
     })
     showPayDialog.value = false
+
+    // Auto re-fetch history to keep data up-to-date
+    await expenseStore.fetchMyExpenses()
+    if (expenseStore.allExpenses.length > 0) {
+      await expenseStore.fetchAllExpenses()
+    }
   }
 }
 

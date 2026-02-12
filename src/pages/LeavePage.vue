@@ -13,9 +13,15 @@
           </div>
         </div>
         <div class="leave-header-right">
-          <button class="leave-back-btn" @click="$router.back()">
-            <q-icon name="arrow_back" size="18px" />
-            <span>กลับ</span>
+          <button v-if="showQuotaManagement" class="leave-individual-quota-btn"
+            @click="openIndividualQuotaDialog">
+            <q-icon name="person_add" size="18px" />
+            <q-tooltip anchor="bottom middle" self="top middle" :offset="[0, 6]">จัดการโควต้ารายบุคคล</q-tooltip>
+          </button>
+          <button v-if="showQuotaManagement" class="leave-quota-settings-btn"
+            @click="openQuotaDialog">
+            <q-icon name="tune" size="18px" />
+            <q-tooltip anchor="bottom middle" self="top middle" :offset="[0, 6]">ตั้งค่าโควต้ากลาง</q-tooltip>
           </button>
         </div>
       </div>
@@ -64,11 +70,14 @@
               <div class="leave-approval-type">
                 <span>{{ getTypeInfo(leave.leaveType).icon }}</span>
                 <span>{{ getTypeInfo(leave.leaveType).label }}</span>
+                <span v-if="leave.durationType && leave.durationType !== 'full_day'" class="leave-duration-badge">
+                  {{ getDurationLabel(leave) }}
+                </span>
               </div>
               <div class="leave-approval-dates">
                 <q-icon name="date_range" size="13px" />
-                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
-                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+                <span>{{ formatDate(leave.startDate) }}{{ leave.startDate !== leave.endDate ? ' — ' + formatDate(leave.endDate) : '' }}</span>
+                <span class="leave-history-days">({{ getDisplayDays(leave) }} วัน)</span>
               </div>
             </div>
 
@@ -97,6 +106,35 @@
                 <span>ไม่อนุมัติ</span>
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quota Summary Cards -->
+      <div class="leave-quota-row">
+        <div v-for="t in leaveStore.leaveTypes" :key="t.value" class="leave-quota-card"
+          :class="{ 'leave-quota-exhausted': leaveStore.getRemainingDays(t.value) <= 0 }">
+          <div class="leave-quota-card-header">
+            <span class="leave-quota-card-icon">{{ t.icon }}</span>
+            <span class="leave-quota-card-label">{{ t.label }}</span>
+            <span v-if="leaveStore.myIndividualQuota" class="leave-quota-badge-individual">โควต้าเฉพาะ</span>
+            <span v-if="leaveStore.getRemainingDays(t.value) <= 0" class="leave-quota-badge-empty">หมดโควต้า</span>
+          </div>
+          <div class="leave-quota-card-numbers">
+            <span class="leave-quota-used">{{ formatDays(leaveStore.usedDaysMap[t.value] || 0) }}</span>
+            <span class="leave-quota-sep">/</span>
+            <span class="leave-quota-total">{{ leaveStore.effectiveQuota[t.value] || 0 }}</span>
+            <span class="leave-quota-unit">วัน</span>
+          </div>
+          <div class="leave-quota-bar">
+            <div class="leave-quota-bar-fill"
+              :style="{
+                width: Math.min(100, ((leaveStore.usedDaysMap[t.value] || 0) / (leaveStore.effectiveQuota[t.value] || 1)) * 100) + '%',
+                background: leaveStore.getRemainingDays(t.value) <= 0 ? '#ef5350' : t.color
+              }"></div>
+          </div>
+          <div class="leave-quota-remaining">
+            คงเหลือ <strong>{{ leaveStore.getRemainingDays(t.value) }}</strong> วัน
           </div>
         </div>
       </div>
@@ -150,21 +188,93 @@
               <div class="leave-type-grid">
                 <button v-for="t in leaveStore.leaveTypes" :key="t.value"
                   class="leave-type-btn"
-                  :class="{ 'leave-type-selected': form.leaveType === t.value }"
-                  @click="form.leaveType = t.value">
+                  :class="{
+                    'leave-type-selected': form.leaveType === t.value,
+                    'leave-type-disabled': leaveStore.getRemainingDays(t.value) <= 0
+                  }"
+                  :disabled="leaveStore.getRemainingDays(t.value) <= 0"
+                  @click="selectLeaveType(t.value)">
                   <span class="leave-type-icon">{{ t.icon }}</span>
                   <span class="leave-type-label">{{ t.label }}</span>
+                  <span v-if="leaveStore.getRemainingDays(t.value) <= 0" class="leave-type-no-quota">หมดโควต้า</span>
+                  <span v-else class="leave-type-remaining">เหลือ {{ leaveStore.getRemainingDays(t.value) }} วัน</span>
                 </button>
               </div>
+            </div>
+
+            <!-- Duration Type (only for sick / personal) -->
+            <div v-if="showDurationSelector" class="leave-field">
+              <label class="leave-field-label">ช่วงเวลาการลา <span class="leave-required">*</span></label>
+              <div class="leave-duration-grid">
+                <button v-for="d in leaveStore.durationTypes" :key="d.value"
+                  class="leave-duration-btn"
+                  :class="{ 'leave-duration-selected': form.durationType === d.value }"
+                  @click="selectDurationType(d.value)">
+                  <q-icon :name="d.icon" size="16px" />
+                  <span class="leave-duration-label">{{ d.label }}</span>
+                  <span v-if="d.hint" class="leave-duration-hint">{{ d.hint }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Custom Time Inputs (when durationType === 'custom') -->
+            <div v-if="form.durationType === 'custom' && showDurationSelector" class="leave-form-row">
+              <div class="leave-field">
+                <label class="leave-field-label">เวลาเริ่ม <span class="leave-required">*</span></label>
+                <q-input v-model="form.customStartTime" dense filled dark readonly
+                  class="leave-time-picker" placeholder="09:00">
+                  <template v-slot:prepend>
+                    <q-icon name="schedule" size="18px" class="cursor-pointer" style="color: #42a5f5;">
+                      <q-popup-proxy transition-show="scale" transition-hide="scale">
+                        <q-time v-model="form.customStartTime" format24h mask="HH:mm" dark
+                          :hour-options="workHourOptions" :minute-options="[0, 30]" color="blue-7" />
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
+                </q-input>
+              </div>
+              <div class="leave-field">
+                <label class="leave-field-label">เวลาสิ้นสุด <span class="leave-required">*</span></label>
+                <q-input v-model="form.customEndTime" dense filled dark readonly
+                  class="leave-time-picker" placeholder="12:00">
+                  <template v-slot:prepend>
+                    <q-icon name="schedule" size="18px" class="cursor-pointer" style="color: #42a5f5;">
+                      <q-popup-proxy transition-show="scale" transition-hide="scale">
+                        <q-time v-model="form.customEndTime" format24h mask="HH:mm" dark
+                          :hour-options="workHourOptions" :minute-options="[0, 30]" color="blue-7" />
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
+                </q-input>
+              </div>
+            </div>
+
+            <!-- Custom time preview -->
+            <div v-if="form.durationType === 'custom' && showDurationSelector && customHoursPreview > 0" class="leave-custom-preview">
+              <q-icon name="schedule" size="14px" />
+              <template v-if="isCappedToFullDay">
+                <span>{{ customHoursPreview }} ชั่วโมง &rarr; <strong>นับเป็นลาเต็มวัน (1 วัน)</strong></span>
+                <span class="leave-cap-note">
+                  <q-icon name="info_outline" size="12px" />
+                  เกิน 4.5 ชม. ถือเป็นลาเต็มวัน
+                </span>
+              </template>
+              <template v-else>
+                <span>{{ customHoursPreview }} ชั่วโมง ({{ customDaysPreview }} วัน)</span>
+                <span v-if="hasLunchDeduction" class="leave-lunch-note">
+                  <q-icon name="info_outline" size="12px" />
+                  หักเวลาพักเที่ยงแล้ว
+                </span>
+              </template>
             </div>
 
             <!-- Date range -->
             <div class="leave-form-row">
               <div class="leave-field">
-                <label class="leave-field-label">วันที่เริ่มลา <span class="leave-required">*</span></label>
+                <label class="leave-field-label">วันที่{{ isPartialDay ? 'ลา' : 'เริ่มลา' }} <span class="leave-required">*</span></label>
                 <input v-model="form.startDate" type="date" class="leave-input leave-date-input" />
               </div>
-              <div class="leave-field">
+              <div v-if="!isPartialDay" class="leave-field">
                 <label class="leave-field-label">วันที่สิ้นสุด <span class="leave-required">*</span></label>
                 <input v-model="form.endDate" type="date" class="leave-input leave-date-input" :min="form.startDate" />
               </div>
@@ -173,7 +283,15 @@
             <!-- Days count -->
             <div v-if="leaveDays > 0" class="leave-days-preview">
               <q-icon name="date_range" size="16px" />
-              <span>ลาทั้งหมด <strong>{{ leaveDays }}</strong> วัน</span>
+              <span>ลาทั้งหมด <strong>{{ leaveDays }}</strong> วัน
+                <template v-if="leaveHours > 0">({{ leaveHours }} ชม.)</template>
+              </span>
+              <template v-if="form.leaveType && leaveStore.getRemainingDays(form.leaveType) < leaveDays">
+                <span class="leave-days-warning">
+                  <q-icon name="warning" size="14px" />
+                  เกินโควต้าคงเหลือ ({{ leaveStore.getRemainingDays(form.leaveType) }} วัน)
+                </span>
+              </template>
             </div>
 
             <!-- Details -->
@@ -236,6 +354,9 @@
                 <div class="leave-history-type">
                   <span class="leave-history-type-icon">{{ getTypeInfo(leave.leaveType).icon }}</span>
                   <span class="leave-history-type-label">{{ getTypeInfo(leave.leaveType).label }}</span>
+                  <span v-if="leave.durationType && leave.durationType !== 'full_day'" class="leave-duration-badge">
+                    {{ getDurationLabel(leave) }}
+                  </span>
                 </div>
                 <div class="leave-history-status"
                   :style="{ color: getStatusInfo(leave.status).color, background: getStatusInfo(leave.status).color + '15' }">
@@ -248,8 +369,8 @@
 
               <div class="leave-history-dates">
                 <q-icon name="date_range" size="13px" />
-                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
-                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+                <span>{{ formatDate(leave.startDate) }}{{ leave.startDate !== leave.endDate ? ' — ' + formatDate(leave.endDate) : '' }}</span>
+                <span class="leave-history-days">({{ getDisplayDays(leave) }} วัน)</span>
               </div>
 
               <div v-if="leave.details" class="leave-history-details">
@@ -294,6 +415,9 @@
                 <div class="leave-history-type">
                   <span class="leave-history-type-icon">{{ getTypeInfo(leave.leaveType).icon }}</span>
                   <span class="leave-history-type-label">{{ getTypeInfo(leave.leaveType).label }}</span>
+                  <span v-if="leave.durationType && leave.durationType !== 'full_day'" class="leave-duration-badge">
+                    {{ getDurationLabel(leave) }}
+                  </span>
                 </div>
                 <span v-if="isLeaveToday(leave)" class="leave-today-badge">
                   <q-icon name="circle" size="6px" />
@@ -310,8 +434,8 @@
 
               <div class="leave-history-dates">
                 <q-icon name="date_range" size="13px" />
-                <span>{{ formatDate(leave.startDate) }} — {{ formatDate(leave.endDate) }}</span>
-                <span class="leave-history-days">({{ calcDays(leave.startDate, leave.endDate) }} วัน)</span>
+                <span>{{ formatDate(leave.startDate) }}{{ leave.startDate !== leave.endDate ? ' — ' + formatDate(leave.endDate) : '' }}</span>
+                <span class="leave-history-days">({{ getDisplayDays(leave) }} วัน)</span>
               </div>
 
               <div v-if="leave.details" class="leave-history-details">
@@ -354,6 +478,149 @@
         </q-card-section>
       </q-card>
     </q-dialog>
+
+    <!-- Quota Settings Dialog (Global) -->
+    <q-dialog v-model="showQuotaDialog">
+      <q-card class="quota-dialog-card">
+        <q-card-section class="quota-dialog-header">
+          <div class="quota-dialog-title-row">
+            <q-icon name="tune" size="20px" style="color: #ab47bc;" />
+            <span class="quota-dialog-title">ตั้งค่าโควต้ากลาง</span>
+          </div>
+          <q-btn icon="close" flat round dense size="sm" color="grey-6" v-close-popup />
+        </q-card-section>
+
+        <q-card-section class="quota-dialog-body">
+          <div class="quota-dialog-fields">
+            <div v-for="t in leaveStore.leaveTypes" :key="t.value" class="quota-dialog-field">
+              <label class="quota-dialog-label">
+                <span>{{ t.icon }} {{ t.label }}</span>
+                <span class="quota-dialog-unit">(วัน/ปี)</span>
+              </label>
+              <input v-model.number="quotaForm[t.value]" type="number" min="0" class="leave-input leave-quota-input" />
+            </div>
+          </div>
+
+          <div v-if="leaveStore.quotaMeta.updatedBy" class="quota-dialog-meta">
+            <q-icon name="info_outline" size="12px" />
+            <span>อัปเดตล่าสุดโดย {{ leaveStore.quotaMeta.updatedBy }}
+              <template v-if="leaveStore.quotaMeta.updatedAt">
+                เมื่อ {{ formatTimestamp(leaveStore.quotaMeta.updatedAt) }}
+              </template>
+            </span>
+          </div>
+
+          <div v-if="quotaSaved" class="leave-quota-saved">
+            <q-icon name="check_circle" size="14px" />
+            <span>บันทึกโควต้าเรียบร้อย</span>
+          </div>
+        </q-card-section>
+
+        <q-card-section class="quota-dialog-actions">
+          <q-btn flat label="ยกเลิก" color="grey-6" v-close-popup />
+          <button class="leave-quota-save-btn" :disabled="leaveStore.loading || !isQuotaChanged" @click="handleSaveQuota">
+            <q-spinner v-if="savingQuota" size="14px" color="white" />
+            <q-icon v-else name="save" size="14px" />
+            <span>{{ savingQuota ? 'กำลังบันทึก...' : 'บันทึก' }}</span>
+          </button>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Individual Quota Management Dialog -->
+    <q-dialog v-model="showIndividualQuotaDialog">
+      <q-card class="quota-dialog-card" style="min-width: 520px;">
+        <q-card-section class="quota-dialog-header">
+          <div class="quota-dialog-title-row">
+            <q-icon name="person_add" size="20px" style="color: #42a5f5;" />
+            <span class="quota-dialog-title">จัดการโควต้ารายบุคคล</span>
+          </div>
+          <q-btn icon="close" flat round dense size="sm" color="grey-6" v-close-popup />
+        </q-card-section>
+
+        <q-card-section class="quota-dialog-body">
+          <!-- Employee Search -->
+          <div class="leave-field" style="margin-bottom: 16px;">
+            <label class="leave-field-label">เลือกพนักงาน</label>
+            <q-select
+              v-model="iqSelectedUser"
+              :options="iqFilteredUsers"
+              option-label="displayLabel"
+              option-value="email"
+              use-input
+              input-debounce="200"
+              @filter="filterUsers"
+              emit-value
+              map-options
+              dense
+              outlined
+              dark
+              placeholder="ค้นหาชื่อหรืออีเมล..."
+              class="iq-user-select"
+              @update:model-value="onSelectUser"
+            >
+              <template v-slot:option="scope">
+                <q-item v-bind="scope.itemProps">
+                  <q-item-section>
+                    <q-item-label>{{ scope.opt.firstName }} {{ scope.opt.lastName }}</q-item-label>
+                    <q-item-label caption>{{ scope.opt.email }} — {{ scope.opt.department || 'ไม่ระบุแผนก' }}</q-item-label>
+                  </q-item-section>
+                </q-item>
+              </template>
+              <template v-slot:no-option>
+                <q-item>
+                  <q-item-section class="text-grey">ไม่พบพนักงาน</q-item-section>
+                </q-item>
+              </template>
+            </q-select>
+          </div>
+
+          <!-- Selected user quota -->
+          <div v-if="iqSelectedUser" class="iq-user-quota-section">
+            <div class="iq-quota-status">
+              <span v-if="iqUserQuota" class="iq-badge-individual">
+                <q-icon name="person" size="12px" /> โควต้าเฉพาะ
+              </span>
+              <span v-else class="iq-badge-global">
+                <q-icon name="public" size="12px" /> ใช้โควต้ากลาง
+              </span>
+            </div>
+
+            <div class="quota-dialog-fields" style="margin-top: 12px;">
+              <div v-for="t in leaveStore.leaveTypes" :key="t.value" class="quota-dialog-field">
+                <label class="quota-dialog-label">
+                  <span>{{ t.icon }} {{ t.label }}</span>
+                  <span class="quota-dialog-unit">(วัน/ปี)</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input v-model.number="iqForm[t.value]" type="number" min="0" class="leave-input leave-quota-input" />
+                  <span class="iq-global-hint">กลาง: {{ leaveStore.leaveQuota[t.value] }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="iqSaved" class="leave-quota-saved">
+              <q-icon name="check_circle" size="14px" />
+              <span>บันทึกโควต้าเรียบร้อย</span>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section v-if="iqSelectedUser" class="quota-dialog-actions">
+          <button v-if="iqUserQuota" class="leave-iq-reset-btn" :disabled="leaveStore.loading" @click="handleResetToGlobal">
+            <q-icon name="restart_alt" size="14px" />
+            <span>รีเซ็ตเป็นโควต้ากลาง</span>
+          </button>
+          <div style="flex:1"></div>
+          <q-btn flat label="ยกเลิก" color="grey-6" v-close-popup />
+          <button class="leave-quota-save-btn" :disabled="leaveStore.loading || !isIqChanged" @click="handleSaveIndividualQuota">
+            <q-spinner v-if="iqSaving" size="14px" color="white" />
+            <q-icon v-else name="save" size="14px" />
+            <span>{{ iqSaving ? 'กำลังบันทึก...' : 'บันทึก' }}</span>
+          </button>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -376,10 +643,153 @@ const rejectingLeave = ref(null)
 const rejectReason = ref('')
 const lastSubmittedType = ref('')
 
+// Quota management state
+const showQuotaDialog = ref(false)
+const quotaForm = ref({ sick: 30, personal: 10, vacation: 6 })
+const savingQuota = ref(false)
+const quotaSaved = ref(false)
+
+const openQuotaDialog = () => {
+  // Sync form with current values before opening
+  quotaForm.value = {
+    sick: leaveStore.leaveQuota.sick,
+    personal: leaveStore.leaveQuota.personal,
+    vacation: leaveStore.leaveQuota.vacation
+  }
+  quotaSaved.value = false
+  showQuotaDialog.value = true
+}
+
+const showQuotaManagement = computed(() => {
+  const role = authStore.profile.role
+  return role === 'hr' || role === 'super_admin'
+})
+
+const isQuotaChanged = computed(() => {
+  return quotaForm.value.sick !== leaveStore.leaveQuota.sick ||
+    quotaForm.value.personal !== leaveStore.leaveQuota.personal ||
+    quotaForm.value.vacation !== leaveStore.leaveQuota.vacation
+})
+
+const handleSaveQuota = async () => {
+  savingQuota.value = true
+  quotaSaved.value = false
+  const success = await leaveStore.updateLeaveQuota(quotaForm.value)
+  savingQuota.value = false
+  if (success) {
+    quotaSaved.value = true
+    setTimeout(() => { quotaSaved.value = false }, 3000)
+  }
+}
+
+// --- Individual Quota Management ---
+const showIndividualQuotaDialog = ref(false)
+const iqSelectedUser = ref(null)
+const iqUserQuota = ref(null) // null = global, object = individual
+const iqForm = ref({ sick: 30, personal: 10, vacation: 6 })
+const iqSaving = ref(false)
+const iqSaved = ref(false)
+const iqFilteredUsers = ref([])
+
+const openIndividualQuotaDialog = async () => {
+  iqSelectedUser.value = null
+  iqUserQuota.value = null
+  iqSaved.value = false
+  // Pre-load all profiles if not loaded yet
+  if (authStore.allProfiles.length === 0) {
+    await authStore.fetchAllProfiles()
+  }
+  iqFilteredUsers.value = authStore.allProfiles.map(p => ({
+    ...p,
+    email: p.id || p.email,
+    displayLabel: `${p.firstName || ''} ${p.lastName || ''} (${p.id || p.email})`.trim()
+  }))
+  showIndividualQuotaDialog.value = true
+}
+
+const filterUsers = (val, update) => {
+  update(() => {
+    const needle = val.toLowerCase()
+    iqFilteredUsers.value = authStore.allProfiles
+      .map(p => ({
+        ...p,
+        email: p.id || p.email,
+        displayLabel: `${p.firstName || ''} ${p.lastName || ''} (${p.id || p.email})`.trim()
+      }))
+      .filter(p =>
+        p.displayLabel.toLowerCase().includes(needle) ||
+        (p.department || '').toLowerCase().includes(needle)
+      )
+  })
+}
+
+const onSelectUser = async (email) => {
+  if (!email) {
+    iqUserQuota.value = null
+    return
+  }
+  iqSaved.value = false
+  const quota = await leaveStore.fetchUserIndividualQuota(email)
+  iqUserQuota.value = quota
+  if (quota) {
+    iqForm.value = { sick: quota.sick, personal: quota.personal, vacation: quota.vacation }
+  } else {
+    // Default to global
+    iqForm.value = {
+      sick: leaveStore.leaveQuota.sick,
+      personal: leaveStore.leaveQuota.personal,
+      vacation: leaveStore.leaveQuota.vacation
+    }
+  }
+}
+
+const isIqChanged = computed(() => {
+  if (!iqUserQuota.value) {
+    // No individual quota yet: changed if different from global
+    return iqForm.value.sick !== leaveStore.leaveQuota.sick ||
+      iqForm.value.personal !== leaveStore.leaveQuota.personal ||
+      iqForm.value.vacation !== leaveStore.leaveQuota.vacation
+  }
+  return iqForm.value.sick !== iqUserQuota.value.sick ||
+    iqForm.value.personal !== iqUserQuota.value.personal ||
+    iqForm.value.vacation !== iqUserQuota.value.vacation
+})
+
+const handleSaveIndividualQuota = async () => {
+  if (!iqSelectedUser.value) return
+  iqSaving.value = true
+  iqSaved.value = false
+  const success = await leaveStore.setUserIndividualQuota(iqSelectedUser.value, iqForm.value)
+  iqSaving.value = false
+  if (success) {
+    iqUserQuota.value = { ...iqForm.value }
+    iqSaved.value = true
+    setTimeout(() => { iqSaved.value = false }, 3000)
+  }
+}
+
+const handleResetToGlobal = async () => {
+  if (!iqSelectedUser.value) return
+  const success = await leaveStore.resetUserToGlobalQuota(iqSelectedUser.value)
+  if (success) {
+    iqUserQuota.value = null
+    iqForm.value = {
+      sick: leaveStore.leaveQuota.sick,
+      personal: leaveStore.leaveQuota.personal,
+      vacation: leaveStore.leaveQuota.vacation
+    }
+    iqSaved.value = true
+    setTimeout(() => { iqSaved.value = false }, 3000)
+  }
+}
+
 const form = ref({
   firstName: '',
   lastName: '',
   leaveType: '',
+  durationType: 'full_day',
+  customStartTime: '09:00',
+  customEndTime: '12:00',
   startDate: '',
   endDate: '',
   details: ''
@@ -428,7 +838,18 @@ onMounted(async () => {
   form.value.startDate = leaveStore.getDateStr(today)
   form.value.endDate = leaveStore.getDateStr(today)
 
-  await leaveStore.fetchMyLeaves()
+  await Promise.all([
+    leaveStore.fetchMyLeaves(),
+    leaveStore.fetchLeaveQuota(),
+    leaveStore.fetchMyIndividualQuota()
+  ])
+
+  // Initialize quota form from loaded values
+  quotaForm.value = {
+    sick: leaveStore.leaveQuota.sick,
+    personal: leaveStore.leaveQuota.personal,
+    vacation: leaveStore.leaveQuota.vacation
+  }
 
   // Fetch pending approvals if user has approval rights
   if (showApprovalSection.value && !approvalsFetched.value) {
@@ -437,21 +858,107 @@ onMounted(async () => {
   }
 })
 
-// Computed: number of leave days
-const leaveDays = computed(() => {
-  if (!form.value.startDate || !form.value.endDate) return 0
-  return calcDays(form.value.startDate, form.value.endDate)
+// Work hour options for time picker (9-17)
+const workHourOptions = [9, 10, 11, 12, 13, 14, 15, 16, 17]
+
+// Whether duration selector should be shown (sick/personal only)
+const showDurationSelector = computed(() => {
+  return form.value.leaveType === 'sick' || form.value.leaveType === 'personal'
 })
+
+// Whether current selection is partial day
+const isPartialDay = computed(() => {
+  return form.value.durationType !== 'full_day' && showDurationSelector.value
+})
+
+// Custom hours/days preview
+const customHoursPreview = computed(() => {
+  if (form.value.durationType !== 'custom') return 0
+  return leaveStore.calcCustomHours(form.value.customStartTime, form.value.customEndTime)
+})
+
+const customDaysPreview = computed(() => {
+  if (customHoursPreview.value <= 0) return 0
+  if (customHoursPreview.value > 4.5) return 1 // capped to full day
+  return Math.round((customHoursPreview.value / leaveStore.WORK_HOURS_PER_DAY) * 100) / 100
+})
+
+// Whether custom hours exceed 4.5 and are capped to full day
+const isCappedToFullDay = computed(() => {
+  return form.value.durationType === 'custom' && customHoursPreview.value > 4.5
+})
+
+// Check if custom time range overlaps lunch
+const hasLunchDeduction = computed(() => {
+  if (form.value.durationType !== 'custom') return false
+  const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+  const s = toMin(form.value.customStartTime || '09:00')
+  const e = toMin(form.value.customEndTime || '12:00')
+  return s < 13 * 60 && e > 12 * 60
+})
+
+// Computed: leave totals (hours + days)
+const leaveCalc = computed(() => {
+  if (!form.value.startDate) return { totalHours: 0, totalDays: 0 }
+  const effectiveEnd = isPartialDay.value ? form.value.startDate : (form.value.endDate || form.value.startDate)
+  return leaveStore.calcLeaveTotals(
+    showDurationSelector.value ? form.value.durationType : 'full_day',
+    form.value.startDate,
+    effectiveEnd,
+    form.value.customStartTime,
+    form.value.customEndTime
+  )
+})
+
+const leaveDays = computed(() => leaveCalc.value.totalDays)
+const leaveHours = computed(() => leaveCalc.value.totalHours)
 
 // Computed: form valid
 const isFormValid = computed(() => {
-  return form.value.firstName.trim() &&
+  const base = form.value.firstName.trim() &&
     form.value.lastName.trim() &&
     form.value.leaveType &&
-    form.value.startDate &&
-    form.value.endDate &&
-    form.value.startDate <= form.value.endDate
+    form.value.startDate
+
+  if (!base) return false
+
+  if (isPartialDay.value) {
+    // Partial day: only need start date
+    if (form.value.durationType === 'custom') {
+      return form.value.customStartTime && form.value.customEndTime &&
+        form.value.customStartTime < form.value.customEndTime &&
+        customHoursPreview.value > 0
+    }
+    return true
+  }
+
+  // Full day: need both dates
+  return form.value.endDate && form.value.startDate <= form.value.endDate
 })
+
+// Select leave type handler
+const selectLeaveType = (type) => {
+  form.value.leaveType = type
+  // Reset to full_day if vacation
+  if (type === 'vacation') {
+    form.value.durationType = 'full_day'
+  }
+}
+
+// Select duration type handler
+const selectDurationType = (type) => {
+  form.value.durationType = type
+  // Sync end date for partial day
+  if (type !== 'full_day') {
+    form.value.endDate = form.value.startDate
+  }
+}
+
+// Format days for display (remove unnecessary decimals)
+const formatDays = (days) => {
+  if (days === Math.floor(days)) return days
+  return Math.round(days * 100) / 100
+}
 
 // Helpers
 const getTypeInfo = (type) => {
@@ -463,11 +970,25 @@ const getStatusInfo = (status) => {
 }
 
 const calcDays = (start, end) => {
-  if (!start || !end) return 0
-  const s = new Date(start)
-  const e = new Date(end)
-  const diff = Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1
-  return Math.max(0, diff)
+  return leaveStore.calcBusinessDays(start, end)
+}
+
+// Get display days for a leave record (use totalDays if available)
+const getDisplayDays = (leave) => {
+  if (leave.totalDays !== undefined && leave.totalDays !== null) {
+    return formatDays(leave.totalDays)
+  }
+  return calcDays(leave.startDate, leave.endDate)
+}
+
+// Get duration label for display
+const getDurationLabel = (leave) => {
+  if (!leave.durationType || leave.durationType === 'full_day') return ''
+  const dt = leaveStore.durationTypes.find(d => d.value === leave.durationType)
+  if (leave.durationType === 'custom' && leave.customStartTime && leave.customEndTime) {
+    return `${leave.customStartTime}-${leave.customEndTime}`
+  }
+  return dt?.label || leave.durationType
 }
 
 const formatDate = (dateStr) => {
@@ -499,7 +1020,7 @@ const exportToExcel = () => {
   const rows = leaves.map(leave => {
     const typeInfo = getTypeInfo(leave.leaveType)
     const statusInfo = getStatusInfo(leave.status)
-    const days = calcDays(leave.startDate, leave.endDate)
+    const days = getDisplayDays(leave)
     const submitted = leave.submittedAt
       ? (leave.submittedAt.toDate ? leave.submittedAt.toDate() : new Date(leave.submittedAt))
       : null
@@ -507,8 +1028,10 @@ const exportToExcel = () => {
     return {
       'ชื่อ-นามสกุล': `${leave.firstName || ''} ${leave.lastName || ''}`.trim(),
       'ประเภทการลา': typeInfo.label,
+      'ช่วงเวลา': getDurationLabel(leave) || 'เต็มวัน',
       'วันที่เริ่ม': leave.startDate || '',
       'วันที่สิ้นสุด': leave.endDate || '',
+      'ชั่วโมง': leave.totalHours ?? '',
       'จำนวนวัน': days,
       'เหตุผล': leave.details || '',
       'สถานะ': statusInfo.label,
@@ -546,13 +1069,30 @@ const handleSubmit = async () => {
     return
   }
 
+  // Validate quota
+  const remaining = leaveStore.getRemainingDays(form.value.leaveType)
+  if (remaining <= 0) {
+    formError.value = `โควต้า${getTypeInfo(form.value.leaveType).label}หมดแล้ว ไม่สามารถส่งใบลาได้`
+    return
+  }
+  if (leaveDays.value > remaining) {
+    formError.value = `จำนวนวันลา (${leaveDays.value} วัน) เกินโควต้าคงเหลือ (${remaining} วัน)`
+    return
+  }
+
+  const effectiveDurationType = showDurationSelector.value ? form.value.durationType : 'full_day'
+  const effectiveEndDate = isPartialDay.value ? form.value.startDate : form.value.endDate
+
   const success = await leaveStore.submitLeave({
     firstName: form.value.firstName,
     lastName: form.value.lastName,
     leaveType: form.value.leaveType,
     startDate: form.value.startDate,
-    endDate: form.value.endDate,
-    details: form.value.details
+    endDate: effectiveEndDate,
+    details: form.value.details,
+    durationType: effectiveDurationType,
+    customStartTime: effectiveDurationType === 'custom' ? form.value.customStartTime : null,
+    customEndTime: effectiveDurationType === 'custom' ? form.value.customEndTime : null
   })
 
   if (success) {
@@ -566,6 +1106,9 @@ const handleSubmit = async () => {
 const resetForm = () => {
   showSuccess.value = false
   form.value.leaveType = ''
+  form.value.durationType = 'full_day'
+  form.value.customStartTime = '09:00'
+  form.value.customEndTime = '12:00'
   form.value.details = ''
   const today = new Date()
   form.value.startDate = leaveStore.getDateStr(today)
@@ -623,6 +1166,14 @@ const handleApprove = async (leave) => {
       })
     }
   }
+
+  // Auto re-fetch history to keep data up-to-date
+  if (success) {
+    await leaveStore.fetchMyLeaves()
+    if (leaveStore.teamLeaves.length > 0) {
+      await leaveStore.fetchTeamLeaves()
+    }
+  }
 }
 
 const openRejectDialog = (leave) => {
@@ -645,6 +1196,12 @@ const handleReject = async () => {
     showRejectDialog.value = false
     rejectingLeave.value = null
     rejectReason.value = ''
+
+    // Auto re-fetch history to keep data up-to-date
+    await leaveStore.fetchMyLeaves()
+    if (leaveStore.teamLeaves.length > 0) {
+      await leaveStore.fetchTeamLeaves()
+    }
   }
 }
 </script>
@@ -696,6 +1253,12 @@ const handleReject = async () => {
   font-size: 0.72rem;
   color: #6b6c6f;
   margin-top: 2px;
+}
+
+.leave-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .leave-back-btn {
@@ -838,6 +1401,33 @@ const handleReject = async () => {
 .leave-input::placeholder { color: #4b5563; }
 .leave-date-input { color-scheme: dark; }
 
+.leave-time-picker {
+  font-variant-numeric: tabular-nums;
+}
+
+.leave-time-picker .q-field__control {
+  background: rgba(30, 33, 36, 0.6) !important;
+  border: 1px solid rgba(58, 59, 62, 0.4) !important;
+  border-radius: 8px !important;
+  min-height: 38px !important;
+  padding: 0 10px !important;
+}
+
+.leave-time-picker .q-field__control::before,
+.leave-time-picker .q-field__control::after {
+  border: none !important;
+}
+
+.leave-time-picker .q-field__native {
+  color: #cecfd2 !important;
+  font-size: 0.82rem !important;
+  font-family: inherit !important;
+}
+
+.leave-time-picker .q-field__control:hover {
+  border-color: rgba(92, 156, 230, 0.5) !important;
+}
+
 /* ====== Leave Type ====== */
 .leave-type-grid {
   display: grid;
@@ -873,12 +1463,290 @@ const handleReject = async () => {
 .leave-type-label { font-size: 0.68rem; color: #9e9e9e; font-weight: 600; }
 .leave-type-selected .leave-type-label { color: #ffb74d; }
 
+.leave-type-btn:disabled,
+.leave-type-btn.leave-type-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(58, 59, 62, 0.2);
+  background: rgba(36, 37, 40, 0.2);
+}
+
+.leave-type-btn:disabled:hover {
+  border-color: rgba(58, 59, 62, 0.2);
+  background: rgba(36, 37, 40, 0.2);
+}
+
+.leave-type-remaining {
+  font-size: 0.58rem;
+  color: #6b6c6f;
+  font-weight: 500;
+}
+
+.leave-type-selected .leave-type-remaining {
+  color: rgba(255, 183, 77, 0.7);
+}
+
+.leave-type-no-quota {
+  font-size: 0.58rem;
+  color: #ef5350;
+  font-weight: 600;
+}
+
+/* ====== Quota Summary Cards ====== */
+.leave-quota-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.leave-quota-card {
+  background: rgba(30, 33, 36, 0.7);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 12px;
+  padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+
+.leave-quota-card:hover {
+  border-color: rgba(58, 59, 62, 0.5);
+}
+
+.leave-quota-exhausted {
+  border-color: rgba(239, 83, 80, 0.3);
+  background: rgba(239, 83, 80, 0.04);
+}
+
+.leave-quota-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.leave-quota-card-icon { font-size: 1rem; }
+
+.leave-quota-card-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #cecfd2;
+}
+
+.leave-quota-badge-empty {
+  margin-left: auto;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.12);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.leave-quota-card-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.leave-quota-used {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #e0e1e4;
+}
+
+.leave-quota-sep {
+  font-size: 0.85rem;
+  color: #4b5563;
+  margin: 0 2px;
+}
+
+.leave-quota-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b6c6f;
+}
+
+.leave-quota-unit {
+  font-size: 0.68rem;
+  color: #4b5563;
+  margin-left: 4px;
+}
+
+.leave-quota-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(58, 59, 62, 0.3);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.leave-quota-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.leave-quota-remaining {
+  font-size: 0.65rem;
+  color: #6b6c6f;
+}
+
+.leave-quota-remaining strong {
+  color: #9ca3af;
+}
+
+/* ====== Quota Settings Button ====== */
+.leave-quota-settings-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #ab47bc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-quota-settings-btn:hover {
+  background: rgba(171, 71, 188, 0.1);
+  border-color: rgba(171, 71, 188, 0.3);
+}
+
+/* ====== Quota Dialog ====== */
+.quota-dialog-card {
+  background: #1e2124;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  border-radius: 14px;
+  min-width: 400px;
+  max-width: 480px;
+}
+
+.quota-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 8px;
+}
+
+.quota-dialog-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-dialog-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e0e1e4;
+}
+
+.quota-dialog-body {
+  padding: 8px 20px 12px;
+}
+
+.quota-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.quota-dialog-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quota-dialog-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #cecfd2;
+}
+
+.quota-dialog-unit {
+  font-size: 0.62rem;
+  color: #4b5563;
+  font-weight: 400;
+}
+
+.quota-dialog-field .leave-quota-input {
+  width: 90px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.quota-dialog-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.65rem;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.quota-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 20px 16px;
+}
+
+.leave-quota-input {
+  text-align: center;
+  font-weight: 600;
+}
+
+.leave-quota-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #ab47bc 0%, #8e24aa 100%);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.leave-quota-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(171, 71, 188, 0.3);
+}
+
+.leave-quota-save-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.leave-quota-saved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: #66bb6a;
+}
+
 /* ====== Days Preview ====== */
 .leave-days-preview {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
+  flex-wrap: wrap;
   border-radius: 8px;
   background: rgba(66, 165, 245, 0.08);
   border: 1px solid rgba(66, 165, 245, 0.15);
@@ -888,6 +1756,16 @@ const handleReject = async () => {
 }
 
 .leave-days-preview strong { font-weight: 800; }
+
+.leave-days-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #ef5350;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 4px;
+}
 
 /* ====== Textarea ====== */
 .leave-textarea {
@@ -1404,6 +2282,208 @@ const handleReject = async () => {
   border-radius: 8px;
 }
 
+/* ====== Duration Type Selector ====== */
+.leave-duration-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.leave-duration-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: rgba(36, 37, 40, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #9e9e9e;
+}
+
+.leave-duration-btn:hover {
+  border-color: rgba(66, 165, 245, 0.3);
+  background: rgba(66, 165, 245, 0.05);
+}
+
+.leave-duration-btn.leave-duration-selected {
+  border-color: rgba(66, 165, 245, 0.5);
+  background: rgba(66, 165, 245, 0.1);
+  color: #42a5f5;
+}
+
+.leave-duration-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.leave-duration-hint {
+  font-size: 0.55rem;
+  color: #6b6c6f;
+  font-weight: 400;
+}
+
+.leave-duration-selected .leave-duration-hint {
+  color: rgba(66, 165, 245, 0.7);
+}
+
+/* ====== Custom Time Preview ====== */
+.leave-custom-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(66, 165, 245, 0.06);
+  border: 1px solid rgba(66, 165, 245, 0.12);
+  font-size: 0.72rem;
+  color: #42a5f5;
+  margin-bottom: 14px;
+}
+
+.leave-lunch-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  color: #6b6c6f;
+  margin-left: 6px;
+}
+
+.leave-cap-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.62rem;
+  color: #ffb74d;
+  margin-left: 6px;
+}
+
+/* ====== Duration Badge (in history/approval) ====== */
+.leave-duration-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(66, 165, 245, 0.12);
+  color: #42a5f5;
+  font-size: 0.58rem;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* ====== Individual Quota Badge ====== */
+.leave-quota-badge-individual {
+  margin-left: auto;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: #42a5f5;
+  background: rgba(66, 165, 245, 0.1);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* ====== Individual Quota Button ====== */
+.leave-individual-quota-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #42a5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-right: 6px;
+}
+
+.leave-individual-quota-btn:hover {
+  background: rgba(66, 165, 245, 0.1);
+  border-color: rgba(66, 165, 245, 0.3);
+}
+
+/* ====== Individual Quota Dialog ====== */
+.iq-user-select {
+  font-size: 0.82rem;
+}
+
+.iq-user-select .q-field__control {
+  background: rgba(30, 33, 36, 0.6) !important;
+  border-color: rgba(58, 59, 62, 0.4) !important;
+}
+
+.iq-user-quota-section {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(36, 37, 40, 0.4);
+  border: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.iq-quota-status {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.iq-badge-individual {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(66, 165, 245, 0.12);
+  color: #42a5f5;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.iq-badge-global {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.iq-global-hint {
+  font-size: 0.62rem;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.leave-iq-reset-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 83, 80, 0.25);
+  background: rgba(239, 83, 80, 0.06);
+  color: #ef5350;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.leave-iq-reset-btn:hover:not(:disabled) {
+  background: rgba(239, 83, 80, 0.12);
+  border-color: rgba(239, 83, 80, 0.4);
+}
+
+.leave-iq-reset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ====== Responsive ====== */
 @media (max-width: 768px) {
   .leave-page { padding: 16px; }
@@ -1412,5 +2492,8 @@ const handleReject = async () => {
   .leave-page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
   .leave-approval-actions { flex-direction: column; }
   .reject-dialog-card { min-width: 90vw; }
+  .leave-quota-row { grid-template-columns: 1fr; }
+  .quota-dialog-card { min-width: 90vw; }
+  .leave-duration-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

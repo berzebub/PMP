@@ -224,13 +224,21 @@
             <span class="nav-label">Company Calendar</span>
           </div>
 
-          <!-- Admin (super_admin only) -->
-          <template v-if="authStore.isSuperAdmin">
+          <!-- Admin (HR sees Leave Report only, super_admin sees all) -->
+          <template v-if="authStore.isSuperAdmin || authStore.isHR">
             <div class="nav-divider"></div>
             <div class="nav-section-label">
               <span>Admin</span>
             </div>
-            <div class="nav-item" :class="{ 'nav-active': currentRoute === '/admin' }"
+            <div class="nav-item" :class="{ 'nav-active': currentRoute === '/leave-report' }"
+              @click="navigateTo('/leave-report')">
+              <div class="nav-icon" style="color: #ff8a65;">
+                <q-icon name="assessment" size="20px" />
+              </div>
+              <span class="nav-label">Leave Report</span>
+            </div>
+            <div v-if="authStore.isSuperAdmin"
+              class="nav-item" :class="{ 'nav-active': currentRoute === '/admin' }"
               @click="navigateTo('/admin')">
               <div class="nav-icon" style="color: #ef5350;">
                 <q-icon name="admin_panel_settings" size="20px" />

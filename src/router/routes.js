@@ -16,6 +16,7 @@ const routes = [
       { path: 'checkins', component: () => import('pages/CheckinPage.vue') },
       { path: 'worklogs', component: () => import('pages/WorklogPage.vue') },
       { path: 'leaves', component: () => import('pages/LeavePage.vue') },
+      { path: 'leave-report', component: () => import('pages/LeaveReportPage.vue') },
       { path: 'expenses', component: () => import('pages/ExpensePage.vue') },
       { path: 'calendar', component: () => import('pages/CalendarPage.vue') },
       { path: 'admin', component: () => import('pages/AdminPage.vue') },

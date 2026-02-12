@@ -34,6 +34,11 @@
           <span>จัดการแผนก</span>
           <q-badge v-if="deptStore.departments.length" :label="deptStore.departments.length" class="admin-tab-badge" />
         </button>
+        <button v-if="authStore.profile.role === 'super_admin'" class="admin-tab"
+          :class="{ 'admin-tab-active': activeTab === 'import' }" @click="activeTab = 'import'">
+          <q-icon name="upload_file" size="18px" />
+          <span>นำเข้าข้อมูล</span>
+        </button>
       </div>
 
       <!-- Users Tab -->
@@ -176,6 +181,147 @@
           </div>
         </div>
       </div>
+      <!-- Import Tab -->
+      <div v-if="activeTab === 'import'" class="admin-section">
+        <div class="import-card">
+          <div class="import-card-header">
+            <q-icon name="upload_file" size="20px" style="color: #ffb74d;" />
+            <span class="import-card-title">นำเข้าข้อมูลการลา</span>
+          </div>
+
+          <div class="import-card-body">
+            <!-- Step info -->
+            <div class="import-info-box">
+              <q-icon name="info" size="16px" />
+              <span>นำเข้าประวัติการลาจากไฟล์ Excel (.xlsx) — ข้อมูลที่นำเข้าจะมีสถานะ "อนุมัติแล้ว" ทั้งหมด</span>
+            </div>
+
+            <!-- Download Template -->
+            <button class="import-template-btn" @click="downloadTemplate">
+              <q-icon name="download" size="16px" />
+              <span>ดาวน์โหลด Template Excel</span>
+            </button>
+
+            <!-- Upload Area -->
+            <div class="import-upload-area"
+              :class="{ 'import-upload-dragover': isDragging }"
+              @dragover.prevent="isDragging = true"
+              @dragleave.prevent="isDragging = false"
+              @drop.prevent="handleDrop">
+              <div v-if="!importFile" class="import-upload-placeholder">
+                <q-icon name="cloud_upload" size="40px" />
+                <span class="import-upload-text">ลากไฟล์ Excel มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</span>
+                <span class="import-upload-hint">.xlsx เท่านั้น</span>
+                <label class="import-browse-btn">
+                  <q-icon name="folder_open" size="16px" />
+                  <span>เลือกไฟล์</span>
+                  <input type="file" accept=".xlsx,.xls" style="display: none;" @change="handleFileSelect" />
+                </label>
+              </div>
+              <div v-else class="import-upload-selected">
+                <q-icon name="description" size="24px" style="color: #66bb6a;" />
+                <div class="import-file-info">
+                  <span class="import-file-name">{{ importFile.name }}</span>
+                  <span class="import-file-size">{{ (importFile.size / 1024).toFixed(1) }} KB</span>
+                </div>
+                <button class="import-remove-btn" @click="clearImport">
+                  <q-icon name="close" size="16px" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Parse Error -->
+            <div v-if="importParseError" class="import-error-box">
+              <q-icon name="error_outline" size="16px" />
+              <span>{{ importParseError }}</span>
+            </div>
+
+            <!-- Preview Table -->
+            <div v-if="importPreview.length > 0" class="import-preview-section">
+              <div class="import-preview-header">
+                <span class="import-preview-title">ตรวจสอบข้อมูล</span>
+                <div class="import-preview-summary">
+                  <span class="import-summary-total">ทั้งหมด {{ importPreview.length }} รายการ</span>
+                  <span class="import-summary-valid">ถูกต้อง {{ validRows.length }}</span>
+                  <span v-if="invalidRows.length > 0" class="import-summary-invalid">ผิดพลาด {{ invalidRows.length }}</span>
+                </div>
+              </div>
+
+              <div class="import-table-wrapper">
+                <table class="import-table">
+                  <thead>
+                    <tr>
+                      <th class="import-th-seq">#</th>
+                      <th>อีเมล</th>
+                      <th>ชื่อ</th>
+                      <th>นามสกุล</th>
+                      <th>ประเภท</th>
+                      <th>วันที่เริ่ม</th>
+                      <th>วันที่สิ้นสุด</th>
+                      <th>แผนก</th>
+                      <th class="import-th-status">สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, idx) in importPreview" :key="idx"
+                      :class="{ 'import-row-invalid': row._errors.length > 0 }">
+                      <td class="import-td-seq">{{ idx + 1 }}</td>
+                      <td>{{ row.userId }}</td>
+                      <td>{{ row.firstName }}</td>
+                      <td>{{ row.lastName }}</td>
+                      <td>
+                        <span class="import-type-pill">{{ getLeaveTypeLabel(row.leaveType) }}</span>
+                      </td>
+                      <td>{{ row.startDate }}</td>
+                      <td>{{ row.endDate }}</td>
+                      <td>{{ row.department || '-' }}</td>
+                      <td class="import-td-status">
+                        <span v-if="row._errors.length === 0" class="import-status-ok">
+                          <q-icon name="check_circle" size="13px" /> OK
+                        </span>
+                        <span v-else class="import-status-error" :title="row._errors.join(', ')">
+                          <q-icon name="error" size="13px" /> {{ row._errors[0] }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Import Actions -->
+              <div class="import-actions">
+                <button class="import-clear-btn" @click="clearImport">
+                  <q-icon name="delete_outline" size="16px" />
+                  <span>ล้างข้อมูล</span>
+                </button>
+                <div style="flex: 1;"></div>
+                <div v-if="invalidRows.length > 0" class="import-skip-hint">
+                  <q-icon name="warning" size="14px" style="color: #ffb74d;" />
+                  <span>จะนำเข้าเฉพาะ {{ validRows.length }} รายการที่ถูกต้อง (ข้าม {{ invalidRows.length }} รายการที่ผิดพลาด)</span>
+                </div>
+                <button class="import-submit-btn"
+                  :disabled="validRows.length === 0 || leaveStore.loading"
+                  @click="handleImport">
+                  <q-spinner v-if="leaveStore.loading" size="16px" color="white" />
+                  <q-icon v-else name="cloud_upload" size="16px" />
+                  <span>{{ leaveStore.loading ? 'กำลังนำเข้า...' : `นำเข้า ${validRows.length} รายการ` }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Import Result -->
+            <div v-if="importResult" class="import-result-box" :class="importResult.errors.length > 0 ? 'import-result-warn' : 'import-result-success'">
+              <q-icon :name="importResult.errors.length > 0 ? 'warning' : 'check_circle'" size="20px" />
+              <div>
+                <div class="import-result-title">นำเข้าสำเร็จ {{ importResult.success }} รายการ</div>
+                <div v-if="importResult.errors.length > 0" class="import-result-errors">
+                  ผิดพลาด {{ importResult.errors.length }} รายการ
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </q-page>
 </template>
@@ -185,10 +331,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from 'stores/auth'
 import { useDepartmentsStore } from 'stores/departments'
 import { useProjectsStore } from 'stores/projects'
+import { useLeaveStore } from 'stores/leave'
+import * as XLSX from 'xlsx'
 
 const authStore = useAuthStore()
 const deptStore = useDepartmentsStore()
 const projectsStore = useProjectsStore()
+const leaveStore = useLeaveStore()
 
 const activeTab = ref('users')
 const userSearch = ref('')
@@ -299,6 +448,187 @@ const handleDeleteDept = async (dept) => {
     if (!confirm(`แผนก "${dept.name}" มีผู้ใช้ ${count} คน ต้องการลบหรือไม่?`)) return
   }
   await deptStore.deleteDepartment(dept.id)
+}
+
+// ====== Import Leave Data ======
+const isDragging = ref(false)
+const importFile = ref(null)
+const importPreview = ref([])
+const importParseError = ref('')
+const importResult = ref(null)
+
+// Leave type mapping (Thai -> value)
+const leaveTypeMap = {
+  'ลาป่วย': 'sick',
+  'ลากิจ': 'personal',
+  'ลาพักร้อน': 'vacation',
+  'sick': 'sick',
+  'personal': 'personal',
+  'vacation': 'vacation'
+}
+
+const getLeaveTypeLabel = (type) => {
+  const found = leaveStore.leaveTypes.find(t => t.value === type)
+  return found ? `${found.icon} ${found.label}` : type || '-'
+}
+
+// Validate a single row
+const validateRow = (row) => {
+  const errors = []
+  if (!row.userId || !row.userId.trim()) errors.push('ไม่มีอีเมล')
+  if (!row.firstName || !row.firstName.trim()) errors.push('ไม่มีชื่อ')
+  if (!row.lastName || !row.lastName.trim()) errors.push('ไม่มีนามสกุล')
+  if (!row.leaveType) errors.push('ประเภทการลาไม่ถูกต้อง')
+  if (!row.startDate || !/^\d{4}-\d{2}-\d{2}$/.test(row.startDate)) errors.push('วันที่เริ่มไม่ถูกต้อง')
+  if (!row.endDate || !/^\d{4}-\d{2}-\d{2}$/.test(row.endDate)) errors.push('วันที่สิ้นสุดไม่ถูกต้อง')
+  if (row.startDate && row.endDate && row.startDate > row.endDate) errors.push('วันที่เริ่ม > วันที่สิ้นสุด')
+  return errors
+}
+
+const validRows = computed(() => importPreview.value.filter(r => r._errors.length === 0))
+const invalidRows = computed(() => importPreview.value.filter(r => r._errors.length > 0))
+
+// Format Excel date serial number or string to YYYY-MM-DD
+const formatExcelDate = (val) => {
+  if (!val) return ''
+  // If it's already a YYYY-MM-DD string
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) return val.trim()
+  // If it's a string like "2025-01-15" with extra chars
+  if (typeof val === 'string') {
+    const match = val.match(/(\d{4})-(\d{1,2})-(\d{1,2})/)
+    if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
+    // Try DD/MM/YYYY or D/M/YYYY
+    const slashMatch = val.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/)
+    if (slashMatch) return `${slashMatch[3]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[1].padStart(2, '0')}`
+  }
+  // If it's an Excel serial number
+  if (typeof val === 'number') {
+    const date = new Date((val - 25569) * 86400 * 1000)
+    if (!isNaN(date.getTime())) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    }
+  }
+  return String(val).trim()
+}
+
+// Parse uploaded Excel file
+const parseExcel = (file) => {
+  importPreview.value = []
+  importParseError.value = ''
+  importResult.value = null
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result)
+      const wb = XLSX.read(data, { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      if (!sheet) {
+        importParseError.value = 'ไม่พบข้อมูลใน Sheet แรก'
+        return
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+      if (rows.length === 0) {
+        importParseError.value = 'ไม่พบข้อมูลในไฟล์ (ไฟล์ว่าง)'
+        return
+      }
+
+      // Map columns
+      importPreview.value = rows.map((row, idx) => {
+        const rawType = String(row['ประเภทการลา'] || row['leaveType'] || '').trim()
+        const mapped = {
+          _rowIndex: idx + 2, // +2 for 1-based + header row
+          userId: String(row['อีเมลพนักงาน'] || row['userId'] || row['email'] || '').trim(),
+          firstName: String(row['ชื่อ'] || row['firstName'] || '').trim(),
+          lastName: String(row['นามสกุล'] || row['lastName'] || '').trim(),
+          leaveType: leaveTypeMap[rawType] || '',
+          startDate: formatExcelDate(row['วันที่เริ่ม'] || row['startDate'] || ''),
+          endDate: formatExcelDate(row['วันที่สิ้นสุด'] || row['endDate'] || ''),
+          department: String(row['แผนก'] || row['department'] || '').trim(),
+          details: String(row['รายละเอียด'] || row['details'] || '').trim(),
+          submittedAt: formatExcelDate(row['วันที่ส่ง'] || row['submittedAt'] || ''),
+          _errors: []
+        }
+        mapped._errors = validateRow(mapped)
+        return mapped
+      })
+    } catch (err) {
+      console.error('Error parsing Excel:', err)
+      importParseError.value = 'ไม่สามารถอ่านไฟล์ได้ — กรุณาตรวจสอบรูปแบบไฟล์'
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+// File handlers
+const handleFileSelect = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    importFile.value = file
+    parseExcel(file)
+  }
+}
+
+const handleDrop = (event) => {
+  isDragging.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+    importFile.value = file
+    parseExcel(file)
+  } else {
+    importParseError.value = 'กรุณาใช้ไฟล์ .xlsx เท่านั้น'
+  }
+}
+
+const clearImport = () => {
+  importFile.value = null
+  importPreview.value = []
+  importParseError.value = ''
+  importResult.value = null
+  isDragging.value = false
+}
+
+// Download blank template
+const downloadTemplate = () => {
+  const headers = [
+    { 'อีเมลพนักงาน': 'user@example.com', 'ชื่อ': 'สมชาย', 'นามสกุล': 'ใจดี', 'ประเภทการลา': 'ลาป่วย', 'วันที่เริ่ม': '2025-01-15', 'วันที่สิ้นสุด': '2025-01-16', 'แผนก': 'IT', 'รายละเอียด': 'ไม่สบาย', 'วันที่ส่ง': '2025-01-14' }
+  ]
+  const ws = XLSX.utils.json_to_sheet(headers)
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 25 }, // อีเมลพนักงาน
+    { wch: 15 }, // ชื่อ
+    { wch: 15 }, // นามสกุล
+    { wch: 15 }, // ประเภทการลา
+    { wch: 14 }, // วันที่เริ่ม
+    { wch: 14 }, // วันที่สิ้นสุด
+    { wch: 15 }, // แผนก
+    { wch: 25 }, // รายละเอียด
+    { wch: 14 }  // วันที่ส่ง
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'LeaveImport')
+  XLSX.writeFile(wb, 'leave-import-template.xlsx')
+}
+
+// Execute import
+const handleImport = async () => {
+  if (validRows.value.length === 0) return
+
+  const confirmed = confirm(`ยืนยันนำเข้าข้อมูลการลา ${validRows.value.length} รายการ?`)
+  if (!confirmed) return
+
+  const result = await leaveStore.importLeaves(validRows.value)
+  importResult.value = result
+
+  if (result.success > 0) {
+    // Clear preview after successful import
+    importPreview.value = []
+    importFile.value = null
+  }
 }
 </script>
 
@@ -820,10 +1150,414 @@ const handleDeleteDept = async (dept) => {
   background: rgba(239, 83, 80, 0.2);
 }
 
+/* ====== Import Section ====== */
+.import-card {
+  background: rgba(30, 33, 36, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.import-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.import-card-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #cecfd2;
+}
+
+.import-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.import-info-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(66, 165, 245, 0.06);
+  border: 1px solid rgba(66, 165, 245, 0.12);
+  font-size: 0.75rem;
+  color: #42a5f5;
+}
+
+.import-template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 187, 106, 0.3);
+  background: rgba(102, 187, 106, 0.08);
+  color: #66bb6a;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-start;
+}
+
+.import-template-btn:hover {
+  background: rgba(102, 187, 106, 0.16);
+  border-color: rgba(102, 187, 106, 0.5);
+}
+
+/* Upload Area */
+.import-upload-area {
+  border: 2px dashed rgba(58, 59, 62, 0.4);
+  border-radius: 12px;
+  transition: all 0.2s;
+  background: rgba(24, 25, 28, 0.3);
+}
+
+.import-upload-area:hover {
+  border-color: rgba(92, 156, 230, 0.3);
+}
+
+.import-upload-dragover {
+  border-color: rgba(92, 156, 230, 0.6) !important;
+  background: rgba(92, 156, 230, 0.04) !important;
+}
+
+.import-upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 36px 20px;
+  color: #4b5563;
+}
+
+.import-upload-text {
+  font-size: 0.78rem;
+  color: #6b6c6f;
+}
+
+.import-upload-hint {
+  font-size: 0.65rem;
+  color: #4b5563;
+}
+
+.import-browse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  margin-top: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(92, 156, 230, 0.3);
+  background: rgba(92, 156, 230, 0.08);
+  color: #5c9ce6;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.import-browse-btn:hover {
+  background: rgba(92, 156, 230, 0.16);
+  border-color: rgba(92, 156, 230, 0.5);
+}
+
+.import-upload-selected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.import-file-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-file-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e1e2e5;
+}
+
+.import-file-size {
+  font-size: 0.68rem;
+  color: #6b6c6f;
+}
+
+.import-remove-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.import-remove-btn:hover {
+  background: rgba(239, 83, 80, 0.2);
+}
+
+/* Parse Error */
+.import-error-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(239, 83, 80, 0.06);
+  border: 1px solid rgba(239, 83, 80, 0.12);
+  font-size: 0.75rem;
+  color: #ef5350;
+}
+
+/* Preview Section */
+.import-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.import-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-preview-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #cecfd2;
+}
+
+.import-preview-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.import-summary-total { color: #9ca3af; }
+.import-summary-valid { color: #66bb6a; }
+.import-summary-invalid { color: #ef5350; }
+
+/* Preview Table */
+.import-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.import-table-wrapper::-webkit-scrollbar { width: 4px; height: 4px; }
+.import-table-wrapper::-webkit-scrollbar-thumb { background: rgba(58, 59, 62, 0.4); border-radius: 2px; }
+
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.import-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.import-table th {
+  padding: 8px 10px;
+  background: rgba(24, 25, 28, 0.9);
+  color: #6b6c6f;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.3);
+}
+
+.import-table td {
+  padding: 7px 10px;
+  color: #cecfd2;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.1);
+  white-space: nowrap;
+}
+
+.import-table tbody tr:hover {
+  background: rgba(58, 59, 62, 0.06);
+}
+
+.import-row-invalid {
+  background: rgba(239, 83, 80, 0.04) !important;
+}
+
+.import-row-invalid td {
+  color: #ef5350 !important;
+}
+
+.import-th-seq, .import-td-seq {
+  width: 36px;
+  text-align: center;
+}
+
+.import-td-seq {
+  font-weight: 700;
+  color: #6b6c6f !important;
+}
+
+.import-type-pill {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.08);
+  font-size: 0.68rem;
+}
+
+.import-th-status {
+  width: 140px;
+}
+
+.import-td-status {
+  width: 140px;
+}
+
+.import-status-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #66bb6a;
+  font-weight: 600;
+}
+
+.import-status-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #ef5350;
+  font-weight: 600;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Actions */
+.import-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.import-clear-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #6b6c6f;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.import-clear-btn:hover {
+  border-color: rgba(239, 83, 80, 0.3);
+  color: #ef5350;
+}
+
+.import-skip-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: #ffb74d;
+}
+
+.import-submit-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #ffb74d 0%, #ef6c00 100%);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.import-submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255, 152, 0, 0.25);
+}
+
+.import-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Import Result */
+.import-result-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 10px;
+}
+
+.import-result-success {
+  background: rgba(102, 187, 106, 0.08);
+  border: 1px solid rgba(102, 187, 106, 0.2);
+  color: #66bb6a;
+}
+
+.import-result-warn {
+  background: rgba(255, 183, 77, 0.08);
+  border: 1px solid rgba(255, 183, 77, 0.2);
+  color: #ffb74d;
+}
+
+.import-result-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.import-result-errors {
+  font-size: 0.72rem;
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
 @media (max-width: 640px) {
   .admin-page { padding: 16px; }
   .admin-user-fields { flex-direction: column; gap: 8px; }
   .admin-user-fields .admin-save-btn { width: 100%; justify-content: center; }
   .admin-add-dept { flex-direction: column; }
+  .import-actions { flex-direction: column; align-items: stretch; }
+  .import-skip-hint { order: -1; }
 }
 </style>

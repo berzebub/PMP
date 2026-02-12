@@ -12,12 +12,7 @@
             <div class="calendar-header-subtitle">ปฏิทินบริษัท — ดูตารางวันลา, กิจกรรม และอีเวนท์ต่างๆ</div>
           </div>
         </div>
-        <div class="calendar-header-right">
-          <button class="calendar-back-btn" @click="$router.back()">
-            <q-icon name="arrow_back" size="18px" />
-            <span>กลับ</span>
-          </button>
-        </div>
+        <div class="calendar-header-right"></div>
       </div>
 
       <!-- Calendar Embed -->

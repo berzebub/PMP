@@ -12,12 +12,7 @@
             <div class="wl-header-subtitle">บันทึกสิ่งที่ทำในแต่ละวัน</div>
           </div>
         </div>
-        <div class="wl-header-right">
-          <button class="wl-back-btn" @click="$router.back()">
-            <q-icon name="arrow_back" size="18px" />
-            <span>กลับ</span>
-          </button>
-        </div>
+        <div class="wl-header-right"></div>
       </div>
 
       <!-- Main Grid -->

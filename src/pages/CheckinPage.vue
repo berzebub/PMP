@@ -12,12 +12,7 @@
             <div class="checkin-header-subtitle">ติดตามการเช็คชื่อ Agile Standup ของคุณ</div>
           </div>
         </div>
-        <div class="checkin-header-right">
-          <button class="checkin-back-btn" @click="$router.back()">
-            <q-icon name="arrow_back" size="18px" />
-            <span>กลับ</span>
-          </button>
-        </div>
+        <div class="checkin-header-right"></div>
       </div>
 
       <!-- Stats Cards Row -->
