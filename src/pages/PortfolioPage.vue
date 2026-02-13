@@ -8,10 +8,63 @@
             <q-icon name="work_history" size="26px" />
           </div>
           <div>
-            <div class="pf-header-title">My Portfolio</div>
-            <div class="pf-header-subtitle">ผลงานและกิจกรรมทั้งหมดของคุณ</div>
+            <div class="pf-header-title">{{ viewingOtherUser ? `Portfolio - ${viewingUserName}` : 'My Portfolio' }}</div>
+            <div class="pf-header-subtitle">{{ viewingOtherUser ? `กำลังดูผลงานของ ${viewingUserName}` : 'ผลงานและกิจกรรมทั้งหมดของคุณ' }}</div>
           </div>
         </div>
+      </div>
+
+      <!-- Super Admin / HR: User Selector -->
+      <div v-if="authStore.isSuperAdmin || authStore.isHR" class="pf-user-selector">
+        <div class="pf-selector-label">
+          <q-icon name="shield" size="16px" style="color: #ef5350;" />
+          <span>ดู Portfolio ของ</span>
+        </div>
+        <q-select
+          v-model="selectedUserEmail"
+          :options="userOptions"
+          option-value="value"
+          option-label="label"
+          emit-value
+          map-options
+          dense
+          outlined
+          dark
+          class="pf-user-select"
+          popup-content-class="pf-select-popup"
+          @update:model-value="onUserChange"
+        >
+          <template v-slot:selected>
+            <div class="pf-selected-user">
+              <q-avatar size="22px" v-if="selectedUserPhoto">
+                <img :src="selectedUserPhoto" />
+              </q-avatar>
+              <q-avatar size="22px" color="grey-8" text-color="white" v-else>
+                <q-icon name="person" size="14px" />
+              </q-avatar>
+              <span>{{ selectedUserLabel }}</span>
+            </div>
+          </template>
+          <template v-slot:option="scope">
+            <q-item v-bind="scope.itemProps" dense>
+              <q-item-section avatar style="min-width: 32px;">
+                <q-avatar size="24px" v-if="scope.opt.photo">
+                  <img :src="scope.opt.photo" />
+                </q-avatar>
+                <q-avatar size="24px" color="grey-8" text-color="white" v-else>
+                  <q-icon name="person" size="14px" />
+                </q-avatar>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label style="font-size: 0.75rem; color: #e0e1e4;">{{ scope.opt.label }}</q-item-label>
+                <q-item-label caption style="font-size: 0.62rem; color: #6b6c6f;">{{ scope.opt.email }}</q-item-label>
+              </q-item-section>
+              <q-item-section side v-if="scope.opt.role">
+                <q-badge :color="getRoleBadgeColor(scope.opt.role)" :label="getRoleLabel(scope.opt.role)" style="font-size: 0.55rem;" />
+              </q-item-section>
+            </q-item>
+          </template>
+        </q-select>
       </div>
 
       <!-- Stats Cards -->
@@ -205,10 +258,78 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useWorklogStore } from 'stores/worklog'
 import { useProjectsStore } from 'stores/projects'
 import { useCheckinStore } from 'stores/checkin'
+import { useAuthStore } from 'stores/auth'
 
 const worklogStore = useWorklogStore()
 const projectsStore = useProjectsStore()
 const checkinStore = useCheckinStore()
+const authStore = useAuthStore()
+
+// Super Admin: user selector
+const selectedUserEmail = ref(null) // null = ตัวเอง
+
+const canViewOthers = computed(() => authStore.isSuperAdmin || authStore.isHR)
+
+const viewingOtherUser = computed(() => {
+  return canViewOthers.value && selectedUserEmail.value && selectedUserEmail.value !== authStore.user?.email
+})
+
+const viewingUserName = computed(() => {
+  if (!selectedUserEmail.value) return ''
+  const p = authStore.allProfiles.find(u => u.email === selectedUserEmail.value || u.id === selectedUserEmail.value)
+  if (p) {
+    const name = `${p.firstName || ''} ${p.lastName || ''}`.trim()
+    return name || p.email
+  }
+  return selectedUserEmail.value
+})
+
+const userOptions = computed(() => {
+  const options = [
+    { label: 'ตัวเอง (My Portfolio)', value: null, email: authStore.user?.email || '', photo: authStore.profile.photoURL, role: null }
+  ]
+  for (const p of authStore.allProfiles) {
+    if (p.email === authStore.user?.email || p.id === authStore.user?.email) continue
+    const name = `${p.firstName || ''} ${p.lastName || ''}`.trim()
+    options.push({
+      label: name || p.email || p.id,
+      value: p.email || p.id,
+      email: p.email || p.id,
+      photo: p.photoURL || '',
+      role: p.role || 'employee'
+    })
+  }
+  return options
+})
+
+const selectedUserPhoto = computed(() => {
+  if (!selectedUserEmail.value) return authStore.profile.photoURL || ''
+  const p = authStore.allProfiles.find(u => u.email === selectedUserEmail.value || u.id === selectedUserEmail.value)
+  return p?.photoURL || ''
+})
+
+const selectedUserLabel = computed(() => {
+  if (!selectedUserEmail.value) return 'ตัวเอง (My Portfolio)'
+  const p = authStore.allProfiles.find(u => u.email === selectedUserEmail.value || u.id === selectedUserEmail.value)
+  if (p) {
+    const name = `${p.firstName || ''} ${p.lastName || ''}`.trim()
+    return name || p.email || p.id
+  }
+  return selectedUserEmail.value
+})
+
+const getRoleBadgeColor = (role) => {
+  const colors = { super_admin: 'red-5', hr: 'purple-3', head: 'orange-5', employee: 'green-5' }
+  return colors[role] || 'grey-6'
+}
+
+const getRoleLabel = (role) => {
+  return authStore.roleLabels[role]?.label || role
+}
+
+const onUserChange = () => {
+  fetchData()
+}
 
 // Filter state
 const dateRange = ref('90')
@@ -234,11 +355,12 @@ const datePresets = [
 const fetchData = async () => {
   isLoading.value = true
   const days = dateRange.value === 'all' ? 3650 : dateRange.value === 'month' ? 31 : parseInt(dateRange.value)
+  const targetEmail = selectedUserEmail.value || null
 
   await Promise.all([
-    worklogStore.fetchMyLogs(days),
-    projectsStore.fetchProjects().then(() => projectsStore.fetchMyCompletedTasks()),
-    checkinStore.fetchCheckinHistory(days)
+    worklogStore.fetchMyLogs(days, targetEmail),
+    projectsStore.fetchProjects().then(() => projectsStore.fetchMyCompletedTasks(200, targetEmail)),
+    checkinStore.fetchCheckinHistory(days, targetEmail)
   ])
   isLoading.value = false
 }
@@ -415,6 +537,79 @@ const openPdf = (url) => {
   font-size: 0.72rem;
   color: #6b6c6f;
   margin-top: 2px;
+}
+
+/* ====== Super Admin User Selector ====== */
+.pf-user-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(239, 83, 80, 0.04);
+  border: 1px solid rgba(239, 83, 80, 0.15);
+  margin-bottom: 16px;
+}
+
+.pf-selector-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ef5350;
+  white-space: nowrap;
+}
+
+.pf-user-select {
+  flex: 1;
+  max-width: 360px;
+}
+
+.pf-user-select :deep(.q-field__control) {
+  background: rgba(30, 33, 36, 0.8) !important;
+  border-color: rgba(58, 59, 62, 0.3) !important;
+  border-radius: 8px !important;
+  min-height: 34px !important;
+  padding: 0 10px !important;
+}
+
+.pf-user-select :deep(.q-field__native) {
+  color: #e0e1e4 !important;
+  font-size: 0.72rem !important;
+  padding: 0 !important;
+  min-height: 34px !important;
+}
+
+.pf-user-select :deep(.q-field__append) {
+  color: #6b6c6f !important;
+}
+
+.pf-selected-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #e0e1e4;
+}
+
+.pf-select-popup {
+  background: #1e2124 !important;
+  border: 1px solid rgba(58, 59, 62, 0.4) !important;
+  border-radius: 10px !important;
+}
+
+.pf-select-popup .q-item {
+  padding: 6px 12px !important;
+  min-height: 40px !important;
+}
+
+.pf-select-popup .q-item:hover {
+  background: rgba(126, 87, 194, 0.08) !important;
+}
+
+.pf-select-popup .q-item--active {
+  background: rgba(126, 87, 194, 0.12) !important;
 }
 
 /* ====== Stats ====== */
@@ -900,6 +1095,16 @@ const openPdf = (url) => {
   .pf-filter-bar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .pf-user-selector {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pf-user-select {
+    max-width: 100%;
+    width: 100%;
   }
 }
 </style>

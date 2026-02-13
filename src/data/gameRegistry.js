@@ -29,6 +29,43 @@ export const games = [
     difficulty: 'ปานกลาง',
     controls: 'Click / Tap',
     available: true
+  },
+  {
+    id: 'stack-overflow',
+    name: 'Stack Overflow',
+    subtitle: 'Office Edition',
+    description: 'กดจังหวะวางเอกสารซ้อนกันให้สูงที่สุด! ยิ่งสูงยิ่งเร็ว ยิ่งท้าทาย',
+    icon: 'layers',
+    color: '#42a5f5',
+    route: '/games/stack-overflow',
+    difficulty: 'ง่าย',
+    controls: 'Click / Tap',
+    available: true
+  },
+  {
+    id: 'werewolf',
+    name: 'Werewolf',
+    subtitle: 'Multiplayer',
+    description: 'เกมหมาป่า 6-10 คน! หาหมาป่าให้เจอก่อนที่จะสาย มี AI เป็น Game Master',
+    icon: 'pets',
+    color: '#ef5350',
+    route: '/games/werewolf',
+    difficulty: 'ปานกลาง',
+    controls: 'Chat / Vote',
+    available: true
+  },
+  {
+    id: 'uno',
+    name: 'UNO',
+    subtitle: 'Multiplayer',
+    description: 'เกมไพ่ UNO! ทิ้งไพ่ให้หมดมือก่อนใครเป็นคนชนะ 2-10 คน',
+    icon: 'style',
+    color: '#ff9800',
+    route: '/games/uno',
+    difficulty: 'ง่าย',
+    controls: 'Tap / Click',
+    available: true,
+    noLeaderboard: true
   }
   // เพิ่มเกมใหม่ได้ที่นี่ เช่น:
   // {

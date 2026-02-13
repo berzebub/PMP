@@ -130,12 +130,13 @@ export const useLeaveStore = defineStore('leave', () => {
       // Determine initial status:
       // - sick leave: auto-approved (no approval needed)
       // - head / super_admin: skip head step, go straight to HR
+      // - skipHeadApproval flag: skip head step, go straight to HR
       // - employee: start at pending_head
       // - unpaid: same approval flow as personal/vacation
       let initialStatus
       if (leaveType === 'sick') {
         initialStatus = 'approved'
-      } else if (userRole === 'head' || userRole === 'super_admin') {
+      } else if (userRole === 'head' || userRole === 'super_admin' || authStore.profile.skipHeadApproval) {
         initialStatus = 'pending_hr'
       } else {
         initialStatus = 'pending_head'
@@ -661,21 +662,22 @@ export const useLeaveStore = defineStore('leave', () => {
   const reportLeaves = ref([])
 
   // Fetch leave report with filters
-  const fetchLeaveReport = async ({ mode = 'all', userId = '', department = '', year = new Date().getFullYear() }) => {
+  const fetchLeaveReport = async ({ mode = 'all', userId = '', department = '', year = new Date().getFullYear(), startDate = '', endDate = '' }) => {
     try {
       loading.value = true
       error.value = null
       reportLeaves.value = []
 
-      const yearStart = `${year}-01-01`
-      const yearEnd = `${year}-12-31`
+      // Use custom date range if provided, otherwise full year
+      const rangeStart = startDate || `${year}-01-01`
+      const rangeEnd = endDate || `${year}-12-31`
 
-      // For individual and department modes, fetch all leaves for the year
+      // For individual and department modes, fetch all leaves for the range
       // then filter client-side to avoid Firestore composite index requirements
       const q = query(
         collection(db, 'leaves'),
-        where('startDate', '>=', yearStart),
-        where('startDate', '<=', yearEnd),
+        where('startDate', '>=', rangeStart),
+        where('startDate', '<=', rangeEnd),
         orderBy('startDate', 'desc')
       )
 

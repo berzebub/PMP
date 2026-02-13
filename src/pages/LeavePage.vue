@@ -324,26 +324,29 @@
 
         <!-- Right: History -->
         <div class="leave-card leave-history-card">
-          <div class="leave-card-header">
-            <q-icon name="history" size="18px" style="color: #42a5f5;" />
-            <span class="leave-card-title">ประวัติการลา</span>
-            <q-badge v-if="leaveStore.pendingCount > 0" :label="leaveStore.pendingCount + ' รอ'" class="leave-pending-badge" />
-            <div style="flex:1"></div>
-            <!-- Tabs -->
-            <div class="leave-tabs">
-              <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
-              <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'team' }" @click="switchToTeam">ทั้งทีม</button>
+          <div class="leave-card-header leave-history-header">
+            <div class="leave-history-title-row">
+              <q-icon name="history" size="18px" style="color: #42a5f5;" />
+              <span class="leave-card-title">ประวัติการลา</span>
+              <q-badge v-if="leaveStore.pendingCount > 0" :label="leaveStore.pendingCount + ' รอ'" class="leave-pending-badge" />
             </div>
-            <button class="leave-refresh-btn" :disabled="leaveStore.loading" @click="refreshHistory" title="รีเฟรช">
-              <q-icon name="refresh" size="15px" :class="{ 'leave-spin': leaveStore.loading }" />
-            </button>
-            <button class="leave-export-btn"
-              :disabled="(historyTab === 'my' ? leaveStore.myLeaves.length : leaveStore.teamLeaves.length) === 0"
-              @click="exportToExcel"
-              title="Export เป็น Excel">
-              <q-icon name="download" size="15px" />
-              <span>Export</span>
-            </button>
+            <div class="leave-history-controls">
+              <!-- Tabs -->
+              <div class="leave-tabs">
+                <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
+                <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'team' }" @click="switchToTeam">ทั้งทีม</button>
+              </div>
+              <button class="leave-refresh-btn" :disabled="leaveStore.loading" @click="refreshHistory" title="รีเฟรช">
+                <q-icon name="refresh" size="15px" :class="{ 'leave-spin': leaveStore.loading }" />
+              </button>
+              <button class="leave-export-btn"
+                :disabled="(historyTab === 'my' ? leaveStore.myLeaves.length : leaveStore.teamLeaves.length) === 0"
+                @click="exportToExcel"
+                title="Export เป็น Excel">
+                <q-icon name="download" size="15px" />
+                <span>Export</span>
+              </button>
+            </div>
           </div>
 
           <!-- My Leaves -->
@@ -1109,6 +1112,34 @@ const handleSubmit = async () => {
   })
 
   if (success) {
+    // Notify approvers (skip for sick leave which is auto-approved)
+    if (form.value.leaveType !== 'sick') {
+      const leaveLabel = getTypeInfo(form.value.leaveType).label
+      const senderName = authStore.fullName
+      const dept = authStore.profile.department
+      const userRole = authStore.profile.role
+
+      let recipients = []
+      if (userRole === 'head' || userRole === 'super_admin' || authStore.profile.skipHeadApproval) {
+        // Head/super_admin/skipHeadApproval skip head approval → notify HR + super_admin
+        recipients = authStore.allProfiles.filter(p => p.role === 'hr' || p.role === 'super_admin')
+      } else {
+        // Employee → notify department head + super_admin
+        recipients = authStore.allProfiles.filter(p =>
+          (p.role === 'head' && p.department === dept) || p.role === 'super_admin'
+        )
+      }
+
+      for (const r of recipients) {
+        await notificationsStore.createNotification({
+          recipientEmail: r.email || r.id,
+          type: 'leave_submitted',
+          title: 'มีใบลาใหม่รออนุมัติ',
+          message: `${senderName} ขอ${leaveLabel} วันที่ ${form.value.startDate}${form.value.startDate !== (isPartialDay.value ? form.value.startDate : form.value.endDate) ? ' ถึง ' + form.value.endDate : ''}`
+        })
+      }
+    }
+
     lastSubmittedType.value = form.value.leaveType
     showSuccess.value = true
   } else {
@@ -1839,6 +1870,24 @@ const handleReject = async () => {
 
 .leave-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ====== History Header ====== */
+.leave-history-header {
+  flex-wrap: wrap;
+}
+
+.leave-history-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.leave-history-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
 /* ====== Tabs ====== */
 .leave-tabs {
   display: flex;
@@ -2508,5 +2557,16 @@ const handleReject = async () => {
   .leave-quota-row { grid-template-columns: 1fr; }
   .quota-dialog-card { min-width: 90vw; }
   .leave-duration-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* History header: stack title + controls */
+  .leave-history-title-row {
+    width: 100%;
+  }
+
+  .leave-history-controls {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 8px;
+  }
 }
 </style>

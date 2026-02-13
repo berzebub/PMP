@@ -201,14 +201,15 @@ export const useProjectsStore = defineStore('projects', () => {
     currentProject.value = null
   }
 
-  // Fetch completed tasks assigned to current user (for portfolio)
-  const fetchMyCompletedTasks = async (maxResults = 200) => {
-    if (!authStore.user?.email) return
+  // Fetch completed tasks assigned to current user or specified user (for portfolio)
+  const fetchMyCompletedTasks = async (maxResults = 200, userEmail = null) => {
+    const targetEmail = userEmail || authStore.user?.email
+    if (!targetEmail) return
 
     try {
       const q = query(
         collection(db, 'tasks'),
-        where('assignedTo', '==', authStore.user.email),
+        where('assignedTo', '==', targetEmail),
         where('completed', '==', true),
         orderBy('completedAt', 'desc'),
         limit(maxResults)

@@ -222,7 +222,7 @@ onMounted(async () => { await loadSubtasks() })
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 6px;
-  max-width: 280px;
+  max-width: 100%;
   width: 100%;
   overflow: hidden;
 }
@@ -534,4 +534,5 @@ onMounted(async () => { await loadSubtasks() })
   background: rgba(92, 156, 230, 0.08);
   color: #7eadd8;
 }
+
 </style>

@@ -208,26 +208,29 @@
 
         <!-- Right: History -->
         <div class="exp-card exp-history-card">
-          <div class="exp-card-header">
-            <q-icon name="history" size="18px" style="color: #42a5f5;" />
-            <span class="exp-card-title">ประวัติการเบิก</span>
-            <q-badge v-if="expenseStore.myPendingCount > 0" :label="expenseStore.myPendingCount + ' รอ'" class="exp-pending-badge" />
-            <div style="flex:1"></div>
-            <!-- Tabs -->
-            <div class="exp-tabs">
-              <button class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
-              <button v-if="showManageSection" class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'all' }" @click="switchToAll">ทั้งหมด</button>
+          <div class="exp-card-header exp-history-header">
+            <div class="exp-history-title-row">
+              <q-icon name="history" size="18px" style="color: #42a5f5;" />
+              <span class="exp-card-title">ประวัติการเบิก</span>
+              <q-badge v-if="expenseStore.myPendingCount > 0" :label="expenseStore.myPendingCount + ' รอ'" class="exp-pending-badge" />
             </div>
-            <button class="exp-refresh-btn" :disabled="expenseStore.loading" @click="refreshHistory" title="รีเฟรช">
-              <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.loading }" />
-            </button>
-            <button class="exp-export-btn"
-              :disabled="currentHistoryList.length === 0"
-              @click="exportToExcel"
-              title="Export เป็น Excel">
-              <q-icon name="download" size="15px" />
-              <span>Export</span>
-            </button>
+            <div class="exp-history-controls">
+              <!-- Tabs -->
+              <div class="exp-tabs">
+                <button class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
+                <button v-if="showManageSection" class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'all' }" @click="switchToAll">ทั้งหมด</button>
+              </div>
+              <button class="exp-refresh-btn" :disabled="expenseStore.loading" @click="refreshHistory" title="รีเฟรช">
+                <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.loading }" />
+              </button>
+              <button class="exp-export-btn"
+                :disabled="currentHistoryList.length === 0"
+                @click="exportToExcel"
+                title="Export เป็น Excel">
+                <q-icon name="download" size="15px" />
+                <span>Export</span>
+              </button>
+            </div>
           </div>
 
           <!-- My Expenses -->
@@ -1467,6 +1470,24 @@ watch(() => authStore.profile, async () => {
   background: rgba(239, 83, 80, 0.08);
 }
 
+/* ====== History Header ====== */
+.exp-history-header {
+  flex-wrap: wrap;
+}
+
+.exp-history-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exp-history-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
 /* ====== Tabs ====== */
 .exp-tabs {
   display: flex;
@@ -2075,6 +2096,17 @@ watch(() => authStore.profile, async () => {
   .exp-reject-dialog,
   .exp-pay-dialog {
     min-width: 90vw;
+  }
+
+  /* History header: stack title + controls */
+  .exp-history-title-row {
+    width: 100%;
+  }
+
+  .exp-history-controls {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 8px;
   }
 }
 </style>

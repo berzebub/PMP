@@ -10,6 +10,7 @@ import {
   orderBy,
   onSnapshot,
   writeBatch,
+  getDocs,
   Timestamp
 } from 'firebase/firestore'
 import { db } from 'boot/firebase'
@@ -115,6 +116,79 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
   }
 
+  // Send admin broadcast notification
+  // target: { type: 'all' } | { type: 'department', department: string } | { type: 'individual', emails: string[] }
+  const sendAdminNotification = async ({ target, title, message }) => {
+    try {
+      loading.value = true
+
+      // Resolve recipient emails based on target type
+      let recipientEmails = []
+
+      if (target.type === 'individual') {
+        recipientEmails = target.emails || []
+      } else {
+        // Fetch all profiles to resolve recipients
+        const profilesSnap = await getDocs(collection(db, 'profiles'))
+        const allProfiles = profilesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+        if (target.type === 'all') {
+          recipientEmails = allProfiles.map(p => p.email || p.id)
+        } else if (target.type === 'department') {
+          recipientEmails = allProfiles
+            .filter(p => p.department === target.department)
+            .map(p => p.email || p.id)
+        }
+      }
+
+      // Remove sender from recipients
+      const senderEmail = authStore.user?.email
+      recipientEmails = recipientEmails.filter(e => e && e !== senderEmail)
+
+      if (recipientEmails.length === 0) {
+        loading.value = false
+        return { success: 0, total: 0 }
+      }
+
+      // Batch write notifications (Firestore batch limit = 500)
+      const batchSize = 500
+      let successCount = 0
+
+      for (let i = 0; i < recipientEmails.length; i += batchSize) {
+        const batch = writeBatch(db)
+        const chunk = recipientEmails.slice(i, i + batchSize)
+
+        for (const email of chunk) {
+          const notifRef = doc(collection(db, 'notifications'))
+          batch.set(notifRef, {
+            recipientEmail: email,
+            type: 'admin_broadcast',
+            title: title || 'ประกาศจากผู้ดูแลระบบ',
+            message,
+            projectId: null,
+            projectName: null,
+            taskId: null,
+            taskTitle: null,
+            senderEmail,
+            senderName: authStore.fullName || senderEmail?.split('@')[0],
+            read: false,
+            createdAt: Timestamp.now()
+          })
+        }
+
+        await batch.commit()
+        successCount += chunk.length
+      }
+
+      loading.value = false
+      return { success: successCount, total: recipientEmails.length }
+    } catch (err) {
+      console.error('Error sending admin notification:', err)
+      loading.value = false
+      throw err
+    }
+  }
+
   // Cleanup
   const cleanup = () => {
     if (unsubscribe) {
@@ -132,6 +206,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     sortedNotifications,
     subscribeToNotifications,
     createNotification,
+    sendAdminNotification,
     markAsRead,
     markAllAsRead,
     cleanup

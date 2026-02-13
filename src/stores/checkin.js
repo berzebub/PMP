@@ -274,9 +274,10 @@ export const useCheckinStore = defineStore('checkin', () => {
     }
   }
 
-  // Fetch personal check-in history (last N days)
-  const fetchCheckinHistory = async (days = 90) => {
-    if (!authStore.user?.email) return
+  // Fetch personal check-in history (last N days, optionally for another user - super_admin)
+  const fetchCheckinHistory = async (days = 90, userEmail = null) => {
+    const targetEmail = userEmail || authStore.user?.email
+    if (!targetEmail) return
 
     try {
       loading.value = true
@@ -286,7 +287,7 @@ export const useCheckinStore = defineStore('checkin', () => {
 
       const q = query(
         collection(db, 'checkins'),
-        where('userId', '==', authStore.user.email),
+        where('userId', '==', targetEmail),
         where('date', '>=', startStr),
         orderBy('date', 'desc')
       )

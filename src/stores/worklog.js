@@ -173,9 +173,10 @@ export const useWorklogStore = defineStore('worklog', () => {
     }
   }
 
-  // Fetch personal work log history
-  const fetchMyLogs = async (days = 30) => {
-    if (!authStore.user?.email) return
+  // Fetch personal work log history (optionally for another user - super_admin)
+  const fetchMyLogs = async (days = 30, userEmail = null) => {
+    const targetEmail = userEmail || authStore.user?.email
+    if (!targetEmail) return
 
     try {
       loading.value = true
@@ -185,7 +186,7 @@ export const useWorklogStore = defineStore('worklog', () => {
 
       const q = query(
         collection(db, 'worklogs'),
-        where('userId', '==', authStore.user.email),
+        where('userId', '==', targetEmail),
         where('date', '>=', startStr),
         orderBy('date', 'desc')
       )

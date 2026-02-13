@@ -80,11 +80,40 @@
             </q-select>
           </div>
 
-          <!-- Year Selector -->
+          <!-- Date Mode Toggle -->
           <div class="report-filter-group">
+            <label class="report-filter-label">ช่วงเวลา</label>
+            <q-btn-toggle v-model="dateMode" no-caps rounded unelevated toggle-color="deep-purple"
+              text-color="grey-5" color="grey-10" :options="[
+                { label: 'ทั้งปี', value: 'year' },
+                { label: 'กำหนดเอง', value: 'custom' }
+              ]" class="report-date-toggle" />
+          </div>
+
+          <!-- Year Selector (when mode = year) -->
+          <div v-if="dateMode === 'year'" class="report-filter-group">
             <label class="report-filter-label">ปี</label>
             <q-select v-model="selectedYear" :options="yearOptions" emit-value map-options dense filled dark
               class="report-select report-year-select" />
+          </div>
+
+          <!-- Date Range Picker (when mode = custom) -->
+          <div v-if="dateMode === 'custom'" class="report-filter-group">
+            <label class="report-filter-label">ช่วงวันที่</label>
+            <q-input :model-value="dateRangeDisplay" dense filled dark readonly
+              class="report-select report-daterange-input">
+              <template v-slot:append>
+                <q-icon name="date_range" class="cursor-pointer">
+                  <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                    <q-date v-model="dateRange" range mask="YYYY-MM-DD" dark color="deep-purple" minimal>
+                      <div class="row items-center justify-end">
+                        <q-btn v-close-popup label="ตกลง" color="deep-purple" flat />
+                      </div>
+                    </q-date>
+                  </q-popup-proxy>
+                </q-icon>
+              </template>
+            </q-input>
           </div>
 
           <!-- Fetch Button -->
@@ -312,16 +341,43 @@ const modes = [
 const mode = ref('all')
 const selectedUser = ref(null)
 const selectedDept = ref(null)
-const selectedYear = ref(new Date().getFullYear())
 const hasFetched = ref(false)
 const filteredUsers = ref([])
 const individualQuota = ref(null)
 
+// --- Date Range ---
 const currentYear = new Date().getFullYear()
+const dateMode = ref('year') // 'year' or 'custom'
+const selectedYear = ref(currentYear)
+const dateRange = ref({ from: `${currentYear}-01-01`, to: `${currentYear}-12-31` })
+
 const yearOptions = Array.from({ length: 5 }, (_, i) => ({
   label: String(currentYear - i),
   value: currentYear - i
 }))
+
+// Display formatted date range in the input
+const dateRangeDisplay = computed(() => {
+  if (!dateRange.value) return ''
+  if (typeof dateRange.value === 'string') {
+    // Single date selected (from === to)
+    return dateRange.value
+  }
+  return `${dateRange.value.from} ~ ${dateRange.value.to}`
+})
+
+// Compute effective start/end based on mode
+const getEffectiveDateRange = () => {
+  if (dateMode.value === 'year') {
+    const y = selectedYear.value
+    return { startDate: `${y}-01-01`, endDate: `${y}-12-31` }
+  }
+  // Custom range
+  if (typeof dateRange.value === 'string') {
+    return { startDate: dateRange.value, endDate: dateRange.value }
+  }
+  return { startDate: dateRange.value.from, endDate: dateRange.value.to }
+}
 
 const reportLeaves = computed(() => leaveStore.reportLeaves)
 
@@ -362,11 +418,14 @@ const filterUsers = (val, update) => {
 
 // --- Fetch Report ---
 const fetchReport = async () => {
+  const { startDate, endDate } = getEffectiveDateRange()
   await leaveStore.fetchLeaveReport({
     mode: mode.value,
     userId: mode.value === 'individual' ? selectedUser.value : '',
     department: mode.value === 'department' ? selectedDept.value : '',
-    year: selectedYear.value
+    year: dateMode.value === 'year' ? selectedYear.value : new Date(startDate).getFullYear(),
+    startDate,
+    endDate
   })
   hasFetched.value = true
 
@@ -715,7 +774,8 @@ const exportToExcel = () => {
   XLSX.utils.book_append_sheet(wb, ws, `รายงานการลา ${modeLabel}`)
 
   const today = new Date().toISOString().slice(0, 10)
-  XLSX.writeFile(wb, `leave-report-${mode.value}-${selectedYear.value}-${today}.xlsx`)
+  const { startDate: sd, endDate: ed } = getEffectiveDateRange()
+  XLSX.writeFile(wb, `leave-report-${mode.value}-${sd}_${ed}-${today}.xlsx`)
 }
 </script>
 
@@ -938,9 +998,18 @@ const exportToExcel = () => {
   font-size: 0.8rem !important;
 }
 
+.report-date-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .report-year-select {
   min-width: 100px;
   max-width: 110px;
+}
+
+.report-daterange-input {
+  min-width: 230px;
+  max-width: 280px;
 }
 
 .report-fetch-btn {

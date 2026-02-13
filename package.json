@@ -1,6 +1,6 @@
 {
   "name": "edu-task",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "A Task Management Program",
   "productName": "Task Management Program for Edutech Innovation",
   "author": "Tanin <ber_zebub@hotmail.com>",
@@ -10,7 +10,8 @@
     "test": "echo \"No test specified\" && exit 0",
     "dev": "quasar dev",
     "build": "quasar build",
-    "postinstall": "quasar prepare"
+    "postinstall": "quasar prepare",
+    "deploy": "quasar build -m pwa && firebase deploy"
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
@@ -23,6 +24,7 @@
     "pinia": "^3.0.1",
     "quasar": "^2.16.0",
     "register-service-worker": "^1.7.2",
+    "three": "^0.182.0",
     "vue": "^3.4.18",
     "vue-chartjs": "^5.3.3",
     "vue-router": "^4.0.0",

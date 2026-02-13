@@ -12,7 +12,7 @@ import { auth, db, storage } from 'boot/firebase'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
-  const profile = ref({ firstName: '', lastName: '', role: 'employee', department: '', photoURL: '' })
+  const profile = ref({ firstName: '', lastName: '', role: 'employee', department: '', photoURL: '', skipHeadApproval: false })
   const allProfiles = ref([])
   const loading = ref(false)
   const error = ref(null)
@@ -65,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
           role: 'employee',
           department: '',
           photoURL: '',
+          skipHeadApproval: false,
           ...snap.data()
         }
       } else {
@@ -156,11 +157,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Update another user's role/department (super_admin only)
-  const updateUserRole = async (email, { role, department }) => {
+  const updateUserRole = async (email, { role, department, skipHeadApproval }) => {
     if (profile.value.role !== 'super_admin') return false
     try {
       loading.value = true
       const data = { role, department, updatedAt: new Date() }
+      if (skipHeadApproval !== undefined) {
+        data.skipHeadApproval = !!skipHeadApproval
+      }
       await updateDoc(doc(db, 'profiles', email), data)
       // Update local allProfiles
       const idx = allProfiles.value.findIndex(p => p.id === email || p.email === email)
@@ -216,7 +220,7 @@ export const useAuthStore = defineStore('auth', () => {
       error.value = null
       await signOut(auth)
       user.value = null
-      profile.value = { firstName: '', lastName: '', role: 'employee', department: '', photoURL: '' }
+      profile.value = { firstName: '', lastName: '', role: 'employee', department: '', photoURL: '', skipHeadApproval: false }
     } catch (err) {
       error.value = err.message
       throw err

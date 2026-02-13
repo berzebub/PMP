@@ -26,7 +26,10 @@ const routes = [
       { path: 'project/:id/trash', component: () => import('pages/TrashPage.vue') },
       { path: 'games', component: () => import('pages/GamesPage.vue') },
       { path: 'games/dino-runner', component: () => import('pages/DinoRunnerPage.vue') },
-      { path: 'games/hallway-herding', component: () => import('pages/HallwayHerdingPage.vue') }
+      { path: 'games/hallway-herding', component: () => import('pages/HallwayHerdingPage.vue') },
+      { path: 'games/stack-overflow', component: () => import('pages/StackOverflowPage.vue') },
+      { path: 'games/werewolf', component: () => import('pages/WerewolfPage.vue') },
+      { path: 'games/uno', component: () => import('pages/UnoPage.vue') }
     ]
   },
 

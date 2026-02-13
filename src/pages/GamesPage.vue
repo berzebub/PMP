@@ -65,6 +65,20 @@
           </div>
         </div>
 
+        <!-- Game Tabs -->
+        <div class="games-lb-tabs">
+          <button
+            v-for="game in availableGamesOnly"
+            :key="game.id"
+            class="games-lb-tab"
+            :class="{ 'games-lb-tab-active': selectedGameId === game.id }"
+            @click="selectLeaderboardGame(game.id)"
+          >
+            <q-icon :name="game.icon" size="16px" />
+            <span>{{ game.name }}</span>
+          </button>
+        </div>
+
         <div v-if="gameStore.loading" class="games-leaderboard-loading">
           <q-spinner-dots size="32px" color="primary" />
         </div>
@@ -104,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { games } from 'src/data/gameRegistry'
 import { useGameStore } from 'src/stores/game'
 import { useAuthStore } from 'src/stores/auth'
@@ -113,7 +127,10 @@ const gameStore = useGameStore()
 const authStore = useAuthStore()
 
 const availableGames = computed(() => games)
+const availableGamesOnly = computed(() => games.filter(g => g.available && !g.noLeaderboard))
 const currentUserEmail = computed(() => authStore.user?.email || '')
+
+const selectedGameId = ref('')
 
 const formatDate = (timestamp) => {
   if (!timestamp) return ''
@@ -121,9 +138,18 @@ const formatDate = (timestamp) => {
   return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
+function selectLeaderboardGame(gameId) {
+  selectedGameId.value = gameId
+  gameStore.fetchLeaderboard(gameId, 10)
+}
+
 onMounted(() => {
-  // Fetch leaderboard for the first (main) game
-  gameStore.fetchLeaderboard('dino-runner', 10)
+  // Default to first available game
+  const firstGame = availableGamesOnly.value[0]
+  if (firstGame) {
+    selectedGameId.value = firstGame.id
+    gameStore.fetchLeaderboard(firstGame.id, 10)
+  }
 })
 </script>
 
@@ -330,6 +356,48 @@ onMounted(() => {
   font-size: 0.68rem;
   color: #6b6c6f;
   margin-top: 1px;
+}
+
+/* ====== Leaderboard Tabs ====== */
+.games-lb-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+  overflow-x: auto;
+}
+
+.games-lb-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #6b6c6f;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.games-lb-tab:hover {
+  background: rgba(58, 59, 62, 0.2);
+  color: #9e9fa3;
+}
+
+.games-lb-tab-active {
+  background: rgba(255, 183, 77, 0.12);
+  border-color: rgba(255, 183, 77, 0.3);
+  color: #ffb74d;
+}
+
+.games-lb-tab-active:hover {
+  background: rgba(255, 183, 77, 0.18);
+  color: #ffb74d;
 }
 
 .games-leaderboard-loading {

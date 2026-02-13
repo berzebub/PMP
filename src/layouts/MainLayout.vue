@@ -55,18 +55,37 @@
                   <div v-for="notif in notificationsStore.sortedNotifications" :key="notif.id"
                     class="notif-item" :class="{ 'notif-unread': !notif.read }"
                     @click="handleNotifClick(notif)">
-                    <div class="notif-icon-wrap" :class="'notif-icon-' + notif.type">
-                      <q-icon :name="notif.type === 'mention' ? 'alternate_email' : notif.type === 'assign' ? 'person_add' : 'info'" size="18px" />
+                    <div class="notif-icon-wrap" :class="'notif-icon-' + (notif.type === 'admin_broadcast' ? 'broadcast' : notif.type)">
+                      <q-icon :name="notif.type === 'mention' ? 'alternate_email' : notif.type === 'assign' ? 'person_add' : notif.type === 'admin_broadcast' ? 'campaign' : ['expense_submitted','expense_rejected','expense_approved','expense_paid'].includes(notif.type) ? 'receipt_long' : ['leave_submitted','leave_approved','leave_rejected'].includes(notif.type) ? 'event_available' : 'info'" size="18px" />
                     </div>
                     <div class="notif-content">
+                      <div v-if="notif.type === 'admin_broadcast' && notif.title" class="notif-broadcast-title">{{ notif.title }}</div>
                       <div class="notif-msg">{{ notif.message }}</div>
                       <div class="notif-meta">
+                        <span v-if="notif.type === 'admin_broadcast'" class="notif-broadcast-badge">ประกาศ</span>
                         <span v-if="notif.projectName" class="notif-project">{{ notif.projectName }}</span>
                         <span class="notif-time">{{ formatNotifTime(notif.createdAt) }}</span>
                       </div>
                     </div>
                     <div v-if="!notif.read" class="notif-dot"></div>
                   </div>
+                </div>
+
+                <!-- Push Notification Enable Banner -->
+                <div v-if="isPushSupported() && pushPermission !== 'granted'" class="push-enable-banner">
+                  <div class="push-enable-text">
+                    <q-icon name="notifications_active" size="18px" />
+                    <span v-if="pushPermission === 'denied'">การแจ้งเตือนถูกบล็อก กรุณาเปิดในตั้งค่าเบราว์เซอร์</span>
+                    <span v-else>เปิดรับการแจ้งเตือนแม้ไม่ได้เปิดแอป</span>
+                  </div>
+                  <button
+                    v-if="pushPermission !== 'denied'"
+                    class="push-enable-btn"
+                    :disabled="isRegistering"
+                    @click="requestPermissionAndRegister"
+                  >
+                    {{ isRegistering ? 'กำลังเปิด...' : 'เปิดการแจ้งเตือน' }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -248,7 +267,7 @@
               </div>
               <span class="nav-label">Leave Report</span>
             </div>
-            <div v-if="authStore.isSuperAdmin"
+            <div v-if="authStore.isSuperAdmin || authStore.isHR"
               class="nav-item" :class="{ 'nav-active': currentRoute === '/admin' }"
               @click="navigateTo('/admin')">
               <div class="nav-icon" style="color: #ef5350;">
@@ -273,6 +292,7 @@
               <div class="drawer-user-email">{{ authStore.user?.email }}</div>
             </div>
           </div>
+          <div class="drawer-version">v{{ version }}</div>
         </div>
       </div>
     </q-drawer>
@@ -282,7 +302,7 @@
     </q-page-container>
 
     <!-- Daily Check-in Dialog (Agile Standup Wizard) -->
-    <q-dialog v-model="showCheckinDialog">
+    <q-dialog v-model="showCheckinDialog" persistent>
       <div class="checkin-dialog">
         <!-- Header -->
         <div class="checkin-dialog-header">
@@ -782,12 +802,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth'
 import { auth } from 'boot/firebase'
+import { version } from '../../package.json'
 import { useAuthStore } from 'stores/auth'
 import { useProjectsStore } from 'stores/projects'
 import { useNotificationsStore } from 'stores/notifications'
 import { useCheckinStore } from 'stores/checkin'
 import { useWorklogStore } from 'stores/worklog'
 import { getHelpForRoute } from 'src/data/helpContent'
+import { usePushNotifications } from 'src/composables/usePushNotifications'
 
 const router = useRouter()
 const route = useRoute()
@@ -796,6 +818,7 @@ const projectsStore = useProjectsStore()
 const notificationsStore = useNotificationsStore()
 const checkinStore = useCheckinStore()
 const worklogStore = useWorklogStore()
+const { pushPermission, isRegistering, isSupported: isPushSupported, requestPermissionAndRegister, unregisterToken, initPushNotifications } = usePushNotifications()
 
 const leftDrawerOpen = ref(false)
 const showCreateProjectDialog = ref(false)
@@ -853,6 +876,8 @@ onMounted(async () => {
     await projectsStore.fetchProjects()
     projectsStore.subscribeToProjects()
     notificationsStore.subscribeToNotifications()
+    // Initialize FCM push notifications
+    initPushNotifications()
     // Fetch profile data
     await authStore.fetchProfile()
     // Fetch all profiles for avatar lookup
@@ -867,10 +892,29 @@ onMounted(async () => {
       showCheckinDialog.value = true
     }
   }
+
+  // Listen for messages from the FCM service worker (notification click while app is open)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', handleSWMessage)
+  }
 })
+
+const handleSWMessage = (event) => {
+  if (event.data?.type === 'NOTIFICATION_CLICK') {
+    const url = event.data.url
+    if (url) {
+      // Extract the hash route path (e.g., '/#/expenses' -> '/expenses')
+      const hashPath = url.includes('#') ? url.split('#')[1] : url
+      router.push(hashPath)
+    }
+  }
+}
 
 onUnmounted(() => {
   notificationsStore.cleanup()
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.removeEventListener('message', handleSWMessage)
+  }
 })
 
 const currentRoute = computed(() => route.path)
@@ -994,6 +1038,7 @@ const handleSaveProfile = async () => {
 const handleLogout = async () => {
   try {
     notificationsStore.cleanup()
+    await unregisterToken()
     await authStore.logout()
     router.push('/login')
   } catch (error) {
@@ -1093,8 +1138,12 @@ const handleNotifClick = async (notif) => {
     notificationsStore.pendingOpenTaskId = notif.taskId
   }
 
-  // Navigate to the project
-  if (notif.projectId) {
+  // Navigate based on notification type
+  if (['expense_submitted', 'expense_rejected', 'expense_approved', 'expense_paid'].includes(notif.type)) {
+    router.push('/expenses')
+  } else if (['leave_submitted', 'leave_approved', 'leave_rejected'].includes(notif.type)) {
+    router.push('/leaves')
+  } else if (notif.projectId) {
     const isSameProject = notif.projectId === projectsStore.currentProject?.id
       && router.currentRoute.value.path === `/project/${notif.projectId}`
 
@@ -2119,6 +2168,13 @@ const handleNotifClick = async (notif) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.drawer-version {
+  text-align: right;
+  font-size: 0.58rem;
+  color: #4a4b4e;
+  padding-top: 4px;
   margin-top: 1px;
 }
 
@@ -2440,9 +2496,33 @@ const handleNotifClick = async (notif) => {
   color: #ffb74d;
 }
 
+.notif-icon-broadcast {
+  background: rgba(255, 183, 77, 0.15);
+  color: #ffb74d;
+}
+
 .notif-content {
   flex: 1;
   min-width: 0;
+}
+
+.notif-broadcast-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffb74d;
+  margin-bottom: 2px;
+}
+
+.notif-broadcast-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 183, 77, 0.15);
+  color: #ffb74d;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
 
 .notif-msg {
@@ -2491,6 +2571,52 @@ const handleNotifClick = async (notif) => {
 @keyframes notif-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* Push Notification Enable Banner */
+.push-enable-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(92, 156, 230, 0.08);
+  border-top: 1px solid rgba(44, 58, 69, 0.4);
+  flex-shrink: 0;
+}
+
+.push-enable-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #9a9ba0;
+}
+
+.push-enable-text .q-icon {
+  color: #5c9ce6;
+}
+
+.push-enable-btn {
+  background: #5c9ce6;
+  color: #fff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.push-enable-btn:hover {
+  background: #4a8cd4;
+}
+
+.push-enable-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Profile Dialog */
@@ -2887,6 +3013,68 @@ const handleNotifClick = async (notif) => {
 
 .help-tip:last-child {
   margin-bottom: 0;
+}
+
+/* ====== Mobile Header Responsive ====== */
+@media (max-width: 480px) {
+  /* Hide title text on mobile - it takes too much space */
+  .q-toolbar > .q-toolbar-title {
+    display: none !important;
+  }
+
+  /* Reduce gap between header items */
+  .q-toolbar > .row.q-gutter-sm {
+    gap: 2px !important;
+  }
+  .q-toolbar > .row.q-gutter-sm > * {
+    margin-left: 2px !important;
+  }
+
+  /* Make check-in button compact: hide label, keep icon + streak */
+  .checkin-label {
+    display: none !important;
+  }
+  .checkin-btn {
+    padding: 5px 8px !important;
+    gap: 4px !important;
+  }
+
+  /* Profile dropdown: hide name, show avatar only */
+  .profile-name {
+    display: none !important;
+  }
+  .profile-dropdown {
+    padding: 2px 0px !important;
+  }
+
+  /* Slightly reduce icon button sizes */
+  .notif-bell,
+  .help-btn {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+  }
+}
+
+/* For extremely narrow screens (< 380px) */
+@media (max-width: 380px) {
+  .q-toolbar {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  .checkin-streak {
+    font-size: 0.65rem !important;
+    padding: 1px 4px !important;
+  }
+
+  .profile-avatar {
+    width: 26px !important;
+    height: 26px !important;
+    min-width: 26px !important;
+    font-size: 0.7rem !important;
+  }
 }
 </style>
 

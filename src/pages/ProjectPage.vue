@@ -19,13 +19,13 @@
     <!-- Project Content -->
     <div v-else>
       <!-- Project Header -->
-      <div class="  q-pa-md">
-        <div class="row items-center justify-between">
+      <div class="q-pa-md">
+        <div class="project-header-row row items-center justify-between">
           <div>
             <div class="text-h5 text-primary">{{ projectsStore.currentProject?.name }}</div>
             <div class="text-subtitle2 text-secondary">{{ projectsStore.currentProject?.description }}</div>
           </div>
-          <div class="row q-gutter-sm">
+          <div class="row q-gutter-xs">
             <!-- <q-btn color="primary" icon="assignment" label="เพิ่ม Task" @click="showCreateTaskDialog = true" /> -->
 
             <q-btn :flat="viewMode !== 'kanban'" :outline="viewMode === 'kanban'" icon="view_column"
@@ -71,7 +71,7 @@
         </div>
 
         <!-- Kanban Columns -->
-        <div v-else class="row q-gutter-md">
+        <div v-else class="row q-gutter-md kanban-columns-row">
           <div v-for="(status, index) in sortedColumns" :key="status.id" class="kanban-column"
             :class="{
               'is-dragging-column': isDraggingColumn && draggedColumn?.id === status.id,
@@ -80,8 +80,8 @@
             }"
             @dragover="handleColumnDragOver($event, index)" @drop="handleColumnDrop($event, index)">
             <div class="column-header" :style="{ backgroundColor: status.color }">
-              <!-- Column Drag Handle -->
-              <div class="column-drag-handle"
+              <!-- Column Drag Handle (desktop only) -->
+              <div v-if="!isMobile" class="column-drag-handle"
                 draggable="true"
                 @dragstart.stop="handleColumnDragStart($event, status, index)"
                 @dragend.stop="handleColumnDragEnd"
@@ -381,6 +381,11 @@
             <div class="dialog-header-actions">
               <q-btn-dropdown flat round icon="more_vert" size="sm" class="toolbar-action-btn">
                 <q-list dense class="dropdown-menu-list">
+                  <q-item clickable v-close-popup @click="showMoveColumnSheet">
+                    <q-item-section avatar><q-icon name="drive_file_move" color="grey-4" /></q-item-section>
+                    <q-item-section>ย้ายไปคอลัมน์...</q-item-section>
+                  </q-item>
+                  <q-separator dark />
                   <q-item clickable v-close-popup @click="duplicateTask(selectedTask)">
                     <q-item-section avatar><q-icon name="content_copy" color="grey-4" /></q-item-section>
                     <q-item-section>คัดลอก Task</q-item-section>
@@ -1372,6 +1377,9 @@ const editingTask = ref({
   dueDate: null,
   assignedTo: []
 })
+
+// Mobile detection
+const isMobile = computed(() => $q.platform.is.mobile || $q.screen.lt.sm)
 
 // Drag and drop state
 const draggedTask = ref(null)
@@ -3780,6 +3788,85 @@ const handleDrop = async (event, targetStatus) => {
     })
   }
 }
+
+// Show dialog to pick target column for moving a task
+const showMoveColumnSheet = () => {
+  const columns = sortedColumns.value
+    .filter(col => col.id !== selectedTask.value?.status)
+  if (!columns.length) return
+
+  const options = columns.map(col => ({ label: col.name, value: col.id }))
+
+  $q.dialog({
+    title: 'ย้าย Task ไปคอลัมน์...',
+    dark: true,
+    options: {
+      type: 'radio',
+      model: options[0].value,
+      items: options
+    },
+    cancel: { flat: true, label: 'ยกเลิก' },
+    ok: { label: 'ย้าย', color: 'primary' },
+    persistent: false
+  }).onOk(targetColumnId => {
+    handleMoveToColumn(selectedTask.value, targetColumnId)
+  })
+}
+
+// Move task to a different column
+const handleMoveToColumn = async (task, targetColumnId) => {
+  if (!task || task.status === targetColumnId) return
+
+  const sourceStatus = task.status
+
+  try {
+    await updateTaskSilently(task.id, {
+      status: targetColumnId,
+      updatedAt: new Date()
+    })
+
+    // Update UI
+    const taskIndex = tasksStore.tasks.findIndex(t => t.id === task.id)
+    if (taskIndex !== -1) {
+      tasksStore.tasks[taskIndex].status = targetColumnId
+      tasksStore.tasks[taskIndex].updatedAt = new Date()
+    }
+
+    // Log activity
+    const fromColumn = sortedColumns.value.find(col => col.id === sourceStatus)
+    const toColumn = sortedColumns.value.find(col => col.id === targetColumnId)
+    const fromName = fromColumn?.name || sourceStatus
+    const toName = toColumn?.name || targetColumnId
+
+    try {
+      await tasksStore.createActivity({
+        taskId: task.id,
+        text: `ย้าย Task จาก "${fromName}" ไป "${toName}"`,
+        activityType: 'status_change',
+        fromStatus: sourceStatus,
+        toStatus: targetColumnId,
+        userEmail: authStore.user.email,
+        userName: authStore.user.displayName || authStore.user.email.split('@')[0]
+      })
+    } catch (activityError) {
+      console.error('Error logging activity:', activityError)
+    }
+
+    $q.notify({
+      type: 'positive',
+      message: `ย้าย Task ไป "${toName}" สำเร็จ!`,
+      position: 'top'
+    })
+  } catch (error) {
+    console.error('Error moving task:', error)
+    $q.notify({
+      type: 'negative',
+      message: `เกิดข้อผิดพลาดในการย้าย Task: ${error.message}`,
+      position: 'top'
+    })
+  }
+}
+
 </script>
 
 <style scoped>
@@ -4656,6 +4743,10 @@ const handleDrop = async (event, targetStatus) => {
 
 .kanban-container {
   overflow-x: auto;
+}
+
+.kanban-columns-row {
+  flex-wrap: nowrap;
 }
 
 .kanban-column {
@@ -6635,5 +6726,102 @@ const handleDrop = async (event, targetStatus) => {
 .assign-close-btn:hover {
   background: #6eabe9;
   box-shadow: 0 2px 10px rgba(92, 156, 230, 0.3);
+}
+
+/* Mobile responsive kanban */
+@media (max-width: 599px) {
+  .kanban-container {
+    padding: 8px !important;
+    overflow-x: visible;
+  }
+
+  .kanban-columns-row {
+    flex-wrap: wrap !important;
+    flex-direction: column !important;
+    margin: 0 !important;
+    gap: 12px;
+  }
+
+  .kanban-columns-row > .kanban-column {
+    min-width: 0 !important;
+    width: 100% !important;
+    flex: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .column-header {
+    padding: 10px 12px;
+  }
+
+  .column-header-content {
+    padding-left: 0;
+  }
+
+  .column-header-content .text-h6 {
+    font-size: 0.82rem !important;
+  }
+
+  .column-content {
+    padding: 8px;
+    min-height: 0;
+  }
+
+  .project-header-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .project-header-row .text-h5 {
+    font-size: 0.95rem !important;
+  }
+
+  .project-header-row .text-subtitle2 {
+    font-size: 0.72rem !important;
+  }
+
+  .header-icon-btn {
+    padding: 4px !important;
+    min-height: 32px !important;
+    min-width: 32px !important;
+  }
+
+  /* Task Detail Dialog mobile layout */
+  .dialog-detail-task {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: 95vh !important;
+    border-radius: 12px 12px 0 0 !important;
+    margin: 0 !important;
+  }
+
+  .detail-two-col {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+
+  .detail-left {
+    flex: none !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(58, 59, 62, 0.3);
+    padding: 16px !important;
+  }
+
+  .detail-right {
+    flex: none !important;
+    min-height: 300px;
+  }
+
+  .detail-right-inner {
+    padding: 14px !important;
+  }
+
+  .dialog-header {
+    padding: 10px 14px !important;
+  }
+
+  .dialog-header-title {
+    font-size: 0.85rem !important;
+  }
 }
 </style>

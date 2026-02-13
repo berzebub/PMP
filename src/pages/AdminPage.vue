@@ -39,6 +39,11 @@
           <q-icon name="upload_file" size="18px" />
           <span>นำเข้าข้อมูล</span>
         </button>
+        <button v-if="authStore.isSuperAdmin" class="admin-tab"
+          :class="{ 'admin-tab-active': activeTab === 'notifications' }" @click="activeTab = 'notifications'">
+          <q-icon name="campaign" size="18px" />
+          <span>ส่งการแจ้งเตือน</span>
+        </button>
       </div>
 
       <!-- Users Tab -->
@@ -119,6 +124,19 @@
                 <q-icon v-else name="save" size="14px" />
                 <span>{{ savingUser === usr.id ? 'กำลังบันทึก...' : 'บันทึก' }}</span>
               </button>
+            </div>
+
+            <!-- Skip Head Approval toggle -->
+            <div v-if="getEditRole(usr) === 'employee'" class="admin-skip-head-row">
+              <label class="admin-skip-head-toggle" @click="setEditSkipHead(usr, !getEditSkipHead(usr))">
+                <div class="admin-toggle-track" :class="{ 'admin-toggle-active': getEditSkipHead(usr) }">
+                  <div class="admin-toggle-thumb"></div>
+                </div>
+                <div class="admin-skip-head-label">
+                  <span class="admin-skip-head-text">ข้ามหัวหน้าอนุมัติ (ส่งตรง HR)</span>
+                  <span class="admin-skip-head-hint">ใบลาจะข้ามขั้นหัวหน้าแผนก ส่งตรงไป HR อนุมัติเลย</span>
+                </div>
+              </label>
             </div>
 
             <!-- Save success message -->
@@ -322,6 +340,235 @@
           </div>
         </div>
       </div>
+
+      <!-- Notifications Tab -->
+      <div v-if="activeTab === 'notifications'" class="admin-section">
+        <div class="notif-send-card">
+          <div class="notif-send-header">
+            <q-icon name="campaign" size="22px" style="color: #ffb74d;" />
+            <span class="notif-send-title">ส่งการแจ้งเตือนถึงพนักงาน</span>
+          </div>
+
+          <div class="notif-send-body">
+            <!-- Target Type -->
+            <div class="notif-field">
+              <label class="notif-field-label">ส่งถึง</label>
+              <div class="notif-target-options">
+                <button class="notif-target-btn" :class="{ 'notif-target-active': notifTarget === 'all' }"
+                  @click="notifTarget = 'all'">
+                  <q-icon name="groups" size="18px" />
+                  <span>ทุกคน</span>
+                </button>
+                <button class="notif-target-btn" :class="{ 'notif-target-active': notifTarget === 'department' }"
+                  @click="notifTarget = 'department'">
+                  <q-icon name="business" size="18px" />
+                  <span>รายแผนก</span>
+                </button>
+                <button class="notif-target-btn" :class="{ 'notif-target-active': notifTarget === 'individual' }"
+                  @click="notifTarget = 'individual'">
+                  <q-icon name="person" size="18px" />
+                  <span>รายบุคคล</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Department Selector (when target = department) -->
+            <div v-if="notifTarget === 'department'" class="notif-field">
+              <label class="notif-field-label">เลือกแผนก</label>
+              <select v-model="notifDepartment" class="admin-select">
+                <option value="">-- เลือกแผนก --</option>
+                <option v-for="dept in deptStore.departments" :key="dept.id" :value="dept.name">
+                  {{ dept.name }} ({{ getUserCountByDept(dept.name) }} คน)
+                </option>
+              </select>
+            </div>
+
+            <!-- Individual Selector (when target = individual) -->
+            <div v-if="notifTarget === 'individual'" class="notif-field">
+              <label class="notif-field-label">เลือกพนักงาน</label>
+              <div class="notif-user-search-bar">
+                <q-icon name="search" size="16px" style="color: #6b6c6f;" />
+                <input v-model="notifUserSearch" class="admin-search-input" placeholder="ค้นหาด้วย email หรือชื่อ..." />
+              </div>
+              <div class="notif-user-list">
+                <div v-for="usr in filteredNotifUsers" :key="usr.email || usr.id" class="notif-user-option"
+                  :class="{ 'notif-user-selected': notifSelectedEmails.includes(usr.email || usr.id) }"
+                  @click="toggleUserSelect(usr)">
+                  <div class="notif-user-check">
+                    <q-icon :name="notifSelectedEmails.includes(usr.email || usr.id) ? 'check_box' : 'check_box_outline_blank'" size="18px" />
+                  </div>
+                  <div class="notif-user-avatar-sm">
+                    <img v-if="usr.photoURL" :src="usr.photoURL" class="admin-user-avatar-img" />
+                    <span v-else>{{ (usr.email || 'U').charAt(0).toUpperCase() }}</span>
+                  </div>
+                  <div class="notif-user-detail">
+                    <div class="notif-user-name">{{ usr.firstName && usr.lastName ? `${usr.firstName} ${usr.lastName}` : (usr.email || usr.id).split('@')[0] }}</div>
+                    <div class="notif-user-email">{{ usr.email || usr.id }}</div>
+                  </div>
+                  <div v-if="usr.department" class="notif-user-dept-chip">{{ usr.department }}</div>
+                </div>
+                <div v-if="filteredNotifUsers.length === 0" class="notif-user-empty">
+                  <q-icon name="person_off" size="24px" style="color: #2a2b2e;" />
+                  <span>ไม่พบพนักงาน</span>
+                </div>
+              </div>
+              <div v-if="notifSelectedEmails.length > 0" class="notif-selected-count">
+                <q-icon name="check_circle" size="14px" />
+                <span>เลือกแล้ว {{ notifSelectedEmails.length }} คน</span>
+              </div>
+            </div>
+
+            <!-- Title -->
+            <div class="notif-field">
+              <label class="notif-field-label">หัวข้อ</label>
+              <input v-model="notifTitle" class="notif-input" placeholder="เช่น ประกาศสำคัญ, แจ้งเรื่องวันหยุด..." />
+            </div>
+
+            <!-- Message -->
+            <div class="notif-field">
+              <label class="notif-field-label">ข้อความ</label>
+              <textarea v-model="notifMessage" class="notif-textarea" rows="4" placeholder="เขียนข้อความที่ต้องการแจ้งเตือน..."></textarea>
+            </div>
+
+            <!-- Summary Info -->
+            <div v-if="notifRecipientSummary" class="notif-summary-info">
+              <q-icon name="info" size="16px" />
+              <span>{{ notifRecipientSummary }}</span>
+            </div>
+
+            <!-- Send Button -->
+            <div class="notif-send-actions">
+              <button class="notif-send-btn" :disabled="!canSendNotif || sendingNotif" @click="showConfirmDialog = true">
+                <q-spinner v-if="sendingNotif" size="16px" color="white" />
+                <q-icon v-else name="send" size="16px" />
+                <span>{{ sendingNotif ? 'กำลังส่ง...' : 'ส่งการแจ้งเตือน' }}</span>
+              </button>
+            </div>
+
+            <!-- Send Result -->
+            <div v-if="notifSendResult" class="notif-send-result" :class="notifSendResult.success > 0 ? 'notif-result-success' : 'notif-result-error'">
+              <q-icon :name="notifSendResult.success > 0 ? 'check_circle' : 'error'" size="20px" />
+              <div>
+                <div class="notif-result-title">
+                  {{ notifSendResult.success > 0 ? `ส่งการแจ้งเตือนสำเร็จ ${notifSendResult.success} คน` : 'ไม่สามารถส่งการแจ้งเตือนได้' }}
+                </div>
+                <div v-if="notifSendResult.error" class="notif-result-sub">{{ notifSendResult.error }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Confirm Send Dialog -->
+        <q-dialog v-model="showConfirmDialog" persistent class="confirm-dialog-backdrop">
+          <div class="confirm-dialog-card">
+            <!-- Header -->
+            <div class="confirm-dialog-header">
+              <div class="confirm-dialog-icon-wrap">
+                <q-icon name="campaign" size="28px" />
+              </div>
+              <div class="confirm-dialog-header-text">
+                <div class="confirm-dialog-title">ยืนยันส่งการแจ้งเตือน</div>
+                <div class="confirm-dialog-subtitle">กรุณาตรวจสอบข้อมูลก่อนส่ง</div>
+              </div>
+            </div>
+
+            <!-- Preview Content -->
+            <div class="confirm-dialog-body">
+              <!-- Target -->
+              <div class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon :name="notifTarget === 'all' ? 'groups' : notifTarget === 'department' ? 'business' : 'person'" size="16px" />
+                  <span>ส่งถึง</span>
+                </div>
+                <div class="confirm-preview-value">
+                  <span v-if="notifTarget === 'all'" class="confirm-target-chip confirm-chip-all">
+                    <q-icon name="groups" size="14px" />
+                    พนักงานทุกคน
+                  </span>
+                  <span v-else-if="notifTarget === 'department'" class="confirm-target-chip confirm-chip-dept">
+                    <q-icon name="business" size="14px" />
+                    แผนก {{ notifDepartment }}
+                  </span>
+                  <span v-else class="confirm-target-chip confirm-chip-individual">
+                    <q-icon name="person" size="14px" />
+                    {{ notifSelectedEmails.length }} คนที่เลือก
+                  </span>
+                </div>
+              </div>
+
+              <!-- Recipient Count -->
+              <div class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="people" size="16px" />
+                  <span>จำนวนผู้รับ</span>
+                </div>
+                <div class="confirm-preview-value">
+                  <span class="confirm-count-badge">{{ confirmRecipientCount }} คน</span>
+                </div>
+              </div>
+
+              <!-- Title -->
+              <div v-if="notifTitle.trim()" class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="title" size="16px" />
+                  <span>หัวข้อ</span>
+                </div>
+                <div class="confirm-preview-value confirm-text-value">{{ notifTitle.trim() }}</div>
+              </div>
+
+              <!-- Message Preview -->
+              <div class="confirm-preview-row confirm-preview-msg-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="chat" size="16px" />
+                  <span>ข้อความ</span>
+                </div>
+                <div class="confirm-msg-preview">
+                  <div class="confirm-msg-bubble">
+                    <div v-if="notifTitle.trim()" class="confirm-msg-title">{{ notifTitle.trim() }}</div>
+                    <div class="confirm-msg-text">{{ notifMessage.trim() }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="confirm-dialog-actions">
+              <button class="confirm-cancel-btn" @click="showConfirmDialog = false">
+                <q-icon name="close" size="16px" />
+                <span>ยกเลิก</span>
+              </button>
+              <button class="confirm-send-btn" @click="confirmAndSendNotif">
+                <q-icon name="send" size="16px" />
+                <span>ยืนยันส่ง</span>
+              </button>
+            </div>
+          </div>
+        </q-dialog>
+
+        <!-- Recent Admin Broadcasts -->
+        <div class="notif-history-section">
+          <div class="notif-history-header">
+            <q-icon name="history" size="18px" style="color: #6b6c6f;" />
+            <span class="notif-history-title">ประวัติการส่งล่าสุด</span>
+          </div>
+          <div v-if="adminBroadcastHistory.length === 0" class="admin-empty">
+            <q-icon name="campaign" size="40px" style="color: #2a2b2e;" />
+            <span>ยังไม่มีประวัติการส่ง</span>
+          </div>
+          <div v-for="item in adminBroadcastHistory" :key="item.id" class="notif-history-card">
+            <div class="notif-history-icon">
+              <q-icon name="campaign" size="16px" />
+            </div>
+            <div class="notif-history-content">
+              <div class="notif-history-msg">{{ item.title || item.message }}</div>
+              <div class="notif-history-sub" v-if="item.title && item.message !== item.title">{{ item.message }}</div>
+              <div class="notif-history-meta">
+                <span class="notif-history-time">{{ formatBroadcastTime(item.createdAt) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </q-page>
 </template>
@@ -332,12 +579,16 @@ import { useAuthStore } from 'stores/auth'
 import { useDepartmentsStore } from 'stores/departments'
 import { useProjectsStore } from 'stores/projects'
 import { useLeaveStore } from 'stores/leave'
+import { useNotificationsStore } from 'stores/notifications'
+import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore'
+import { db } from 'boot/firebase'
 import * as XLSX from 'xlsx'
 
 const authStore = useAuthStore()
 const deptStore = useDepartmentsStore()
 const projectsStore = useProjectsStore()
 const leaveStore = useLeaveStore()
+const notificationsStore = useNotificationsStore()
 
 const activeTab = ref('users')
 const userSearch = ref('')
@@ -355,11 +606,17 @@ onMounted(async () => {
     projectsStore.fetchAllProjects()
   ])
 
+  // Load broadcast history for notifications tab
+  if (authStore.isSuperAdmin) {
+    fetchBroadcastHistory()
+  }
+
   // Initialize edit state for each user
   authStore.allProfiles.forEach(u => {
     editState.value[u.email || u.id] = {
       role: u.role || 'employee',
-      department: u.department || ''
+      department: u.department || '',
+      skipHeadApproval: u.skipHeadApproval || false
     }
   })
 })
@@ -378,20 +635,26 @@ const filteredUsers = computed(() => {
 // Helpers for edit state
 const getEditRole = (usr) => editState.value[usr.email || usr.id]?.role || usr.role || 'employee'
 const getEditDept = (usr) => editState.value[usr.email || usr.id]?.department ?? usr.department ?? ''
+const getEditSkipHead = (usr) => editState.value[usr.email || usr.id]?.skipHeadApproval ?? usr.skipHeadApproval ?? false
 const setEditRole = (usr, val) => {
   const key = usr.email || usr.id
-  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '' }
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
   editState.value[key].role = val
 }
 const setEditDept = (usr, val) => {
   const key = usr.email || usr.id
-  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '' }
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
   editState.value[key].department = val
+}
+const setEditSkipHead = (usr, val) => {
+  const key = usr.email || usr.id
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
+  editState.value[key].skipHeadApproval = val
 }
 const isUserChanged = (usr) => {
   const e = editState.value[usr.email || usr.id]
   if (!e) return false
-  return e.role !== (usr.role || 'employee') || e.department !== (usr.department || '')
+  return e.role !== (usr.role || 'employee') || e.department !== (usr.department || '') || e.skipHeadApproval !== (usr.skipHeadApproval || false)
 }
 
 // Get projects a user belongs to
@@ -413,7 +676,8 @@ const handleSaveUser = async (usr) => {
   savingUser.value = usr.id
   const success = await authStore.updateUserRole(key, {
     role: edit.role,
-    department: edit.department
+    department: edit.department,
+    skipHeadApproval: edit.skipHeadApproval || false
   })
   savingUser.value = null
   if (success) {
@@ -636,6 +900,160 @@ const handleImport = async () => {
     importFile.value = null
   }
 }
+
+// ====== Admin Notifications ======
+const notifTarget = ref('all') // 'all' | 'department' | 'individual'
+const notifDepartment = ref('')
+const notifUserSearch = ref('')
+const notifSelectedEmails = ref([])
+const notifTitle = ref('')
+const notifMessage = ref('')
+const sendingNotif = ref(false)
+const notifSendResult = ref(null)
+const adminBroadcastHistory = ref([])
+const showConfirmDialog = ref(false)
+
+// Filter users for individual selection
+const filteredNotifUsers = computed(() => {
+  const s = notifUserSearch.value.toLowerCase().trim()
+  const profiles = authStore.allProfiles.filter(u => (u.email || u.id) !== authStore.user?.email)
+  if (!s) return profiles
+  return profiles.filter(u =>
+    (u.email || '').toLowerCase().includes(s) ||
+    (u.firstName || '').toLowerCase().includes(s) ||
+    (u.lastName || '').toLowerCase().includes(s)
+  )
+})
+
+// Toggle individual user selection
+const toggleUserSelect = (usr) => {
+  const email = usr.email || usr.id
+  const idx = notifSelectedEmails.value.indexOf(email)
+  if (idx >= 0) {
+    notifSelectedEmails.value.splice(idx, 1)
+  } else {
+    notifSelectedEmails.value.push(email)
+  }
+}
+
+// Recipient summary text
+const notifRecipientSummary = computed(() => {
+  if (notifTarget.value === 'all') {
+    const count = authStore.allProfiles.filter(u => (u.email || u.id) !== authStore.user?.email).length
+    return `จะส่งถึงพนักงานทุกคน (${count} คน)`
+  }
+  if (notifTarget.value === 'department') {
+    if (!notifDepartment.value) return ''
+    const count = authStore.allProfiles.filter(u => u.department === notifDepartment.value && (u.email || u.id) !== authStore.user?.email).length
+    return `จะส่งถึงแผนก "${notifDepartment.value}" (${count} คน)`
+  }
+  if (notifTarget.value === 'individual') {
+    if (notifSelectedEmails.value.length === 0) return ''
+    return `จะส่งถึง ${notifSelectedEmails.value.length} คนที่เลือก`
+  }
+  return ''
+})
+
+// Validate can send
+const canSendNotif = computed(() => {
+  if (!notifMessage.value.trim()) return false
+  if (notifTarget.value === 'department' && !notifDepartment.value) return false
+  if (notifTarget.value === 'individual' && notifSelectedEmails.value.length === 0) return false
+  return true
+})
+
+// Computed: recipient count for confirm dialog
+const confirmRecipientCount = computed(() => {
+  if (notifTarget.value === 'all') {
+    return authStore.allProfiles.filter(u => (u.email || u.id) !== authStore.user?.email).length
+  }
+  if (notifTarget.value === 'department') {
+    return authStore.allProfiles.filter(u => u.department === notifDepartment.value && (u.email || u.id) !== authStore.user?.email).length
+  }
+  return notifSelectedEmails.value.length
+})
+
+// Confirm and actually send
+const confirmAndSendNotif = async () => {
+  showConfirmDialog.value = false
+
+  if (!canSendNotif.value) return
+
+  sendingNotif.value = true
+  notifSendResult.value = null
+
+  try {
+    let target
+    if (notifTarget.value === 'all') {
+      target = { type: 'all' }
+    } else if (notifTarget.value === 'department') {
+      target = { type: 'department', department: notifDepartment.value }
+    } else {
+      target = { type: 'individual', emails: [...notifSelectedEmails.value] }
+    }
+
+    const result = await notificationsStore.sendAdminNotification({
+      target,
+      title: notifTitle.value.trim() || 'ประกาศจากผู้ดูแลระบบ',
+      message: notifMessage.value.trim()
+    })
+
+    notifSendResult.value = { success: result.success, total: result.total }
+
+    // Clear form on success
+    if (result.success > 0) {
+      notifTitle.value = ''
+      notifMessage.value = ''
+      notifSelectedEmails.value = []
+      notifDepartment.value = ''
+      // Refresh history
+      fetchBroadcastHistory()
+    }
+  } catch (err) {
+    notifSendResult.value = { success: 0, total: 0, error: err.message || 'เกิดข้อผิดพลาด' }
+  } finally {
+    sendingNotif.value = false
+  }
+}
+
+// Fetch recent admin broadcast history (sent by current admin)
+const fetchBroadcastHistory = async () => {
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('type', '==', 'admin_broadcast'),
+      where('senderEmail', '==', authStore.user?.email),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    )
+    const snap = await getDocs(q)
+    // Deduplicate by title+message+createdAt (since one broadcast = many docs)
+    const seen = new Map()
+    snap.docs.forEach(d => {
+      const data = d.data()
+      const key = `${data.title}|${data.message}|${data.createdAt?.seconds}`
+      if (!seen.has(key)) {
+        seen.set(key, { id: d.id, ...data })
+      }
+    })
+    adminBroadcastHistory.value = Array.from(seen.values())
+  } catch (err) {
+    console.error('Error fetching broadcast history:', err)
+  }
+}
+
+// Format broadcast time
+const formatBroadcastTime = (ts) => {
+  if (!ts) return ''
+  const date = ts.toDate ? ts.toDate() : new Date(ts)
+  const now = new Date()
+  const diff = now - date
+  if (diff < 60000) return 'เมื่อสักครู่'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} นาทีที่แล้ว`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} ชั่วโมงที่แล้ว`
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 </script>
 
 <style scoped>
@@ -973,6 +1391,68 @@ const handleImport = async () => {
   margin-top: 10px;
   font-size: 0.75rem;
   color: #66bb6a;
+}
+
+/* Skip Head Approval Toggle */
+.admin-skip-head-row {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.admin-skip-head-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(58, 59, 62, 0.5);
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.admin-toggle-active {
+  background: rgba(206, 147, 216, 0.5);
+}
+
+.admin-toggle-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #6b6c6f;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: all 0.2s;
+}
+
+.admin-toggle-active .admin-toggle-thumb {
+  left: 18px;
+  background: #ce93d8;
+}
+
+.admin-skip-head-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.admin-skip-head-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cecfd2;
+}
+
+.admin-skip-head-hint {
+  font-size: 0.68rem;
+  color: #6b6c6f;
 }
 
 /* Department */
@@ -1558,6 +2038,399 @@ const handleImport = async () => {
   opacity: 0.8;
 }
 
+/* ====== Notification Send Tab ====== */
+.notif-send-card {
+  background: rgba(30, 33, 36, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.notif-send-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.notif-send-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #e1e2e5;
+}
+
+.notif-send-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.notif-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notif-field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.3px;
+}
+
+.notif-target-options {
+  display: flex;
+  gap: 6px;
+}
+
+.notif-target-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(22, 24, 26, 0.6);
+  color: #6b6c6f;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.notif-target-btn:hover {
+  border-color: rgba(92, 156, 230, 0.3);
+  color: #9ca3af;
+}
+
+.notif-target-active {
+  background: rgba(92, 156, 230, 0.1);
+  border-color: rgba(92, 156, 230, 0.4);
+  color: #5c9ce6;
+}
+
+.notif-user-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(22, 24, 26, 0.6);
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  border-radius: 8px;
+}
+
+.notif-user-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 10px;
+  background: rgba(22, 24, 26, 0.4);
+}
+
+.notif-user-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.notif-user-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notif-user-list::-webkit-scrollbar-thumb {
+  background: rgba(58, 59, 62, 0.5);
+  border-radius: 10px;
+}
+
+.notif-user-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.15);
+}
+
+.notif-user-option:last-child {
+  border-bottom: none;
+}
+
+.notif-user-option:hover {
+  background: rgba(92, 156, 230, 0.06);
+}
+
+.notif-user-selected {
+  background: rgba(92, 156, 230, 0.08);
+}
+
+.notif-user-selected .notif-user-check {
+  color: #5c9ce6;
+}
+
+.notif-user-check {
+  color: #4b5563;
+  flex-shrink: 0;
+}
+
+.notif-user-avatar-sm {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #5c9ce6 0%, #3a7bd5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.notif-user-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-user-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e1e2e5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-user-email {
+  font-size: 0.72rem;
+  color: #6b6c6f;
+  margin-top: 1px;
+}
+
+.notif-user-dept-chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(92, 156, 230, 0.1);
+  color: #7db8f0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.notif-user-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 0;
+  color: #4b5563;
+  font-size: 0.8rem;
+}
+
+.notif-selected-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #5c9ce6;
+  margin-top: 4px;
+}
+
+.notif-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(22, 24, 26, 0.8);
+  color: #cecfd2;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.notif-input:focus {
+  border-color: rgba(92, 156, 230, 0.5);
+}
+
+.notif-input::placeholder {
+  color: #4b5563;
+}
+
+.notif-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: rgba(22, 24, 26, 0.8);
+  color: #cecfd2;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.notif-textarea:focus {
+  border-color: rgba(92, 156, 230, 0.5);
+}
+
+.notif-textarea::placeholder {
+  color: #4b5563;
+}
+
+.notif-summary-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(92, 156, 230, 0.06);
+  border: 1px solid rgba(92, 156, 230, 0.12);
+  color: #7db8f0;
+  font-size: 0.8rem;
+}
+
+.notif-send-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.notif-send-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%);
+  color: #1a1a1a;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.notif-send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255, 183, 77, 0.35);
+}
+
+.notif-send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.notif-send-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+}
+
+.notif-result-success {
+  background: rgba(102, 187, 106, 0.1);
+  border: 1px solid rgba(102, 187, 106, 0.2);
+  color: #66bb6a;
+}
+
+.notif-result-error {
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid rgba(239, 83, 80, 0.2);
+  color: #ef5350;
+}
+
+.notif-result-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.notif-result-sub {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+/* Notification History */
+.notif-history-section {
+  margin-top: 20px;
+}
+
+.notif-history-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.notif-history-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.notif-history-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(30, 33, 36, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.2);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.notif-history-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 183, 77, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffb74d;
+  flex-shrink: 0;
+}
+
+.notif-history-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-history-msg {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e1e2e5;
+  line-height: 1.4;
+}
+
+.notif-history-sub {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.notif-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.notif-history-time {
+  font-size: 0.72rem;
+  color: #6b6c6f;
+}
+
 @media (max-width: 640px) {
   .admin-page { padding: 16px; }
   .admin-user-fields { flex-direction: column; gap: 8px; }
@@ -1565,5 +2438,220 @@ const handleImport = async () => {
   .admin-add-dept { flex-direction: column; }
   .import-actions { flex-direction: column; align-items: stretch; }
   .import-skip-hint { order: -1; }
+  .notif-target-options { flex-direction: column; }
+}
+</style>
+
+<style>
+/* ====== Confirm Send Dialog (unscoped for teleported q-dialog) ====== */
+.confirm-dialog-card {
+  background: #1e2124;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  border-radius: 16px;
+  width: 440px;
+  max-width: 92vw;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 183, 77, 0.08);
+}
+
+.confirm-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.25);
+}
+
+.confirm-dialog-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.18) 0%, rgba(255, 152, 0, 0.10) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffb74d;
+  flex-shrink: 0;
+}
+
+.confirm-dialog-header-text {
+  flex: 1;
+}
+
+.confirm-dialog-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e1e2e5;
+  letter-spacing: 0.2px;
+}
+
+.confirm-dialog-subtitle {
+  font-size: 0.78rem;
+  color: #6b6c6f;
+  margin-top: 3px;
+}
+
+.confirm-dialog-body {
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirm-preview-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.confirm-preview-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6b6c6f;
+  min-width: 90px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.confirm-preview-value {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #cecfd2;
+}
+
+.confirm-text-value {
+  font-weight: 600;
+  color: #e1e2e5;
+}
+
+.confirm-target-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.confirm-chip-all {
+  background: rgba(236, 64, 122, 0.12);
+  color: #ec407a;
+  border: 1px solid rgba(236, 64, 122, 0.2);
+}
+
+.confirm-chip-dept {
+  background: rgba(92, 156, 230, 0.12);
+  color: #5c9ce6;
+  border: 1px solid rgba(92, 156, 230, 0.2);
+}
+
+.confirm-chip-individual {
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
+  border: 1px solid rgba(102, 187, 106, 0.2);
+}
+
+.confirm-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffb74d;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.confirm-preview-msg-row {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm-msg-preview {
+  width: 100%;
+}
+
+.confirm-msg-bubble {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(30, 33, 36, 0.8);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-left: 3px solid #ffb74d;
+}
+
+.confirm-msg-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffb74d;
+  margin-bottom: 6px;
+}
+
+.confirm-msg-text {
+  font-size: 0.82rem;
+  color: #c0c1c4;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid rgba(58, 59, 62, 0.25);
+}
+
+.confirm-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.confirm-cancel-btn:hover {
+  background: rgba(58, 59, 62, 0.3);
+  color: #cecfd2;
+}
+
+.confirm-send-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 24px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%);
+  color: #1a1a1a;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.confirm-send-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255, 183, 77, 0.35);
+}
+
+@media (max-width: 640px) {
+  .confirm-dialog-card { width: 100%; }
+  .confirm-preview-row:not(.confirm-preview-msg-row) { flex-direction: column; gap: 4px; }
+  .confirm-preview-label { min-width: unset; }
 }
 </style>
