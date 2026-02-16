@@ -19,7 +19,10 @@ export const useExpenseStore = defineStore('expense', () => {
   const myExpenses = ref([])
   const allExpenses = ref([])
   const pendingExpenses = ref([])
-  const loading = ref(false)
+  const submitting = ref(false)
+  const fetching = ref(false)
+  const processing = ref(false)
+  const loading = computed(() => submitting.value || fetching.value || processing.value)
   const error = ref(null)
 
   const authStore = useAuthStore()
@@ -62,7 +65,7 @@ export const useExpenseStore = defineStore('expense', () => {
     if (!authStore.user?.email) return false
 
     try {
-      loading.value = true
+      submitting.value = true
       error.value = null
 
       const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
@@ -134,14 +137,17 @@ export const useExpenseStore = defineStore('expense', () => {
       error.value = err.message
       return false
     } finally {
-      loading.value = false
+      submitting.value = false
     }
   }
 
   // Cancel expense (only if pending_hr)
   const cancelExpense = async (expenseId) => {
+    const expense = myExpenses.value.find(e => e.id === expenseId)
+    if (expense && expense.status !== 'pending_hr') return false
+
     try {
-      loading.value = true
+      processing.value = true
       await updateDoc(doc(db, 'expenses', expenseId), {
         status: 'cancelled',
         updatedAt: Timestamp.now()
@@ -154,14 +160,14 @@ export const useExpenseStore = defineStore('expense', () => {
       console.error('Error cancelling expense:', err)
       return false
     } finally {
-      loading.value = false
+      processing.value = false
     }
   }
 
   // HR: Mark as pending CEO (pending_hr -> pending_ceo)
   const markPendingCEO = async (expenseId) => {
     try {
-      loading.value = true
+      processing.value = true
       await updateDoc(doc(db, 'expenses', expenseId), {
         status: 'pending_ceo',
         hrReviewedBy: authStore.user.email,
@@ -180,14 +186,14 @@ export const useExpenseStore = defineStore('expense', () => {
       console.error('Error marking pending CEO:', err)
       return false
     } finally {
-      loading.value = false
+      processing.value = false
     }
   }
 
   // HR: Mark CEO approved (pending_hr -> approved)
   const markCEOApproved = async (expenseId) => {
     try {
-      loading.value = true
+      processing.value = true
       await updateDoc(doc(db, 'expenses', expenseId), {
         status: 'approved',
         hrReviewedBy: authStore.user.email,
@@ -204,14 +210,14 @@ export const useExpenseStore = defineStore('expense', () => {
       console.error('Error marking CEO approved:', err)
       return false
     } finally {
-      loading.value = false
+      processing.value = false
     }
   }
 
   // HR: Mark as paid (approved -> paid)
   const markPaid = async (expenseId, { method, slipFile, note }) => {
     try {
-      loading.value = true
+      processing.value = true
 
       let slipURL = ''
       if (slipFile) {
@@ -237,14 +243,14 @@ export const useExpenseStore = defineStore('expense', () => {
       console.error('Error marking paid:', err)
       return false
     } finally {
-      loading.value = false
+      processing.value = false
     }
   }
 
   // HR: Reject expense
   const rejectExpense = async (expenseId, reason = '') => {
     try {
-      loading.value = true
+      processing.value = true
       await updateDoc(doc(db, 'expenses', expenseId), {
         status: 'rejected',
         rejectedBy: authStore.user.email,
@@ -259,7 +265,7 @@ export const useExpenseStore = defineStore('expense', () => {
       console.error('Error rejecting expense:', err)
       return false
     } finally {
-      loading.value = false
+      processing.value = false
     }
   }
 
@@ -267,7 +273,7 @@ export const useExpenseStore = defineStore('expense', () => {
   const fetchMyExpenses = async () => {
     if (!authStore.user?.email) return
     try {
-      loading.value = true
+      fetching.value = true
       const q = query(
         collection(db, 'expenses'),
         where('userId', '==', authStore.user.email),
@@ -278,7 +284,7 @@ export const useExpenseStore = defineStore('expense', () => {
     } catch (err) {
       console.error('Error fetching my expenses:', err)
     } finally {
-      loading.value = false
+      fetching.value = false
     }
   }
 
@@ -292,7 +298,7 @@ export const useExpenseStore = defineStore('expense', () => {
     }
 
     try {
-      loading.value = true
+      fetching.value = true
       // HR sees pending_hr + approved (not yet paid)
       const q = query(
         collection(db, 'expenses'),
@@ -304,14 +310,14 @@ export const useExpenseStore = defineStore('expense', () => {
     } catch (err) {
       console.error('Error fetching pending expenses:', err)
     } finally {
-      loading.value = false
+      fetching.value = false
     }
   }
 
   // Fetch all expenses (for history/export)
   const fetchAllExpenses = async () => {
     try {
-      loading.value = true
+      fetching.value = true
       const q = query(
         collection(db, 'expenses'),
         orderBy('submittedAt', 'desc')
@@ -321,7 +327,7 @@ export const useExpenseStore = defineStore('expense', () => {
     } catch (err) {
       console.error('Error fetching all expenses:', err)
     } finally {
-      loading.value = false
+      fetching.value = false
     }
   }
 
@@ -337,6 +343,9 @@ export const useExpenseStore = defineStore('expense', () => {
     allExpenses,
     pendingExpenses,
     loading,
+    submitting,
+    fetching,
+    processing,
     error,
     statusLabels,
     myPendingCount,

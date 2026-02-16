@@ -21,6 +21,7 @@ const routes = [
       { path: 'expenses', component: () => import('pages/ExpensePage.vue') },
       { path: 'calendar', component: () => import('pages/CalendarPage.vue') },
       { path: 'admin', component: () => import('pages/AdminPage.vue') },
+      { path: 'attendance', component: () => import('pages/AttendancePage.vue') },
       { path: 'project/:id', component: () => import('pages/ProjectPage.vue') },
       { path: 'project/:id/settings', component: () => import('pages/ProjectSettingsPage.vue') },
       { path: 'project/:id/trash', component: () => import('pages/TrashPage.vue') },
@@ -29,7 +30,8 @@ const routes = [
       { path: 'games/hallway-herding', component: () => import('pages/HallwayHerdingPage.vue') },
       { path: 'games/stack-overflow', component: () => import('pages/StackOverflowPage.vue') },
       { path: 'games/werewolf', component: () => import('pages/WerewolfPage.vue') },
-      { path: 'games/uno', component: () => import('pages/UnoPage.vue') }
+      { path: 'games/uno', component: () => import('pages/UnoPage.vue') },
+      { path: 'games/vocab-battle', component: () => import('pages/VocabBattlePage.vue') }
     ]
   },
 

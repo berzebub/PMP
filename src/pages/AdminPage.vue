@@ -34,15 +34,26 @@
           <span>จัดการแผนก</span>
           <q-badge v-if="deptStore.departments.length" :label="deptStore.departments.length" class="admin-tab-badge" />
         </button>
-        <button v-if="authStore.profile.role === 'super_admin'" class="admin-tab"
+        <button  class="admin-tab"
           :class="{ 'admin-tab-active': activeTab === 'import' }" @click="activeTab = 'import'">
           <q-icon name="upload_file" size="18px" />
           <span>นำเข้าข้อมูล</span>
         </button>
-        <button v-if="authStore.isSuperAdmin" class="admin-tab"
+        <button  class="admin-tab"
+          :class="{ 'admin-tab-active': activeTab === 'holidays' }" @click="activeTab = 'holidays'">
+          <q-icon name="calendar_month" size="18px" />
+          <span>วันหยุดประจำปี</span>
+          <q-badge v-if="holidayStore.holidays.length" :label="holidayStore.holidays.length" class="admin-tab-badge" />
+        </button>
+        <button  class="admin-tab"
           :class="{ 'admin-tab-active': activeTab === 'notifications' }" @click="activeTab = 'notifications'">
           <q-icon name="campaign" size="18px" />
           <span>ส่งการแจ้งเตือน</span>
+        </button>
+        <button class="admin-tab"
+          :class="{ 'admin-tab-active': activeTab === 'punch' }" @click="activeTab = 'punch'">
+          <q-icon name="fingerprint" size="18px" />
+          <span>เวลาเข้า-ออก</span>
         </button>
       </div>
 
@@ -116,6 +127,21 @@
                     {{ dept.name }}
                   </option>
                 </select>
+              </div>
+              <div class="admin-field">
+                <label class="admin-field-label">Punch ID</label>
+                <input
+                  :value="getEditPunchId(usr)"
+                  @input="setEditPunchId(usr, $event.target.value)"
+                  class="admin-select"
+                  placeholder="เช่น 00000001"
+                  maxlength="8"
+                  style="font-family: monospace;"
+                />
+                <div v-if="punchIdDuplicateWarning(usr)" class="admin-punch-id-warn">
+                  <q-icon name="warning" size="12px" />
+                  {{ punchIdDuplicateWarning(usr) }}
+                </div>
               </div>
               <button class="admin-save-btn"
                 :disabled="!isUserChanged(usr) || savingUser === usr.id"
@@ -339,6 +365,200 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Holidays Tab -->
+      <div v-if="activeTab === 'holidays'" class="admin-section">
+        <div class="holiday-card">
+          <div class="holiday-card-header">
+            <q-icon name="calendar_month" size="22px" style="color: #66bb6a;" />
+            <span class="holiday-card-title">จัดการวันหยุดประจำปี</span>
+            <div style="flex:1"></div>
+            <select v-model="holidayYear" class="holiday-year-select" @change="loadHolidaysForYear">
+              <option v-for="y in availableYears" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
+
+          <div class="holiday-card-body">
+            <!-- Action Buttons -->
+            <div class="holiday-actions-row">
+              <button class="holiday-action-btn holiday-preset-btn" @click="loadThaiPresets"
+                :disabled="holidayStore.loading">
+                <q-icon name="flag" size="16px" />
+                <span>เพิ่มวันหยุดนักขัตฤกษ์ไทย</span>
+              </button>
+              <button class="holiday-action-btn holiday-copy-btn" @click="showCopyDialog = true"
+                :disabled="holidayStore.loading">
+                <q-icon name="content_copy" size="16px" />
+                <span>คัดลอกจากปีอื่น</span>
+              </button>
+            </div>
+
+            <!-- Add Holiday Form -->
+            <div class="holiday-add-form">
+              <div class="holiday-add-fields">
+                <input v-model="newHolidayDate" type="date" class="holiday-date-input" />
+                <input v-model="newHolidayName" class="holiday-name-input" placeholder="ชื่อวันหยุด เช่น วันขึ้นปีใหม่" @keyup.enter="handleAddHoliday" />
+                <select v-model="newHolidayType" class="holiday-type-select">
+                  <option value="national">นักขัตฤกษ์</option>
+                  <option value="company">บริษัท</option>
+                  <option value="special">พิเศษ</option>
+                </select>
+              </div>
+              <button class="holiday-add-btn" :disabled="!newHolidayDate || !newHolidayName.trim() || holidayStore.loading"
+                @click="handleAddHoliday">
+                <q-icon name="add" size="18px" />
+                <span>เพิ่มวันหยุด</span>
+              </button>
+            </div>
+
+            <!-- Holiday List -->
+            <div class="holiday-list">
+              <div v-if="holidayStore.loading" class="admin-empty">
+                <q-spinner size="24px" color="green" />
+                <span>กำลังโหลด...</span>
+              </div>
+              <div v-else-if="editableHolidays.length === 0" class="admin-empty">
+                <q-icon name="calendar_month" size="40px" style="color: #2a2b2e;" />
+                <span>ยังไม่มีวันหยุดสำหรับปี {{ holidayYear }}</span>
+              </div>
+              <div v-else>
+                <div class="holiday-list-header">
+                  <span class="holiday-count-badge">{{ editableHolidays.length }} วันหยุด</span>
+                </div>
+                <div v-for="(h, idx) in editableHolidays" :key="h.date + idx" class="holiday-item">
+                  <div v-if="editingHolidayDate === h.date" class="holiday-item-edit">
+                    <input v-model="editHolidayNewDate" type="date" class="holiday-date-input" />
+                    <input v-model="editHolidayName" class="holiday-name-input" @keyup.enter="handleUpdateHoliday(h.date)" @keyup.esc="editingHolidayDate = null" />
+                    <select v-model="editHolidayType" class="holiday-type-select">
+                      <option value="national">นักขัตฤกษ์</option>
+                      <option value="company">บริษัท</option>
+                      <option value="special">พิเศษ</option>
+                    </select>
+                    <button class="admin-dept-save-btn" @click="handleUpdateHoliday(h.date)">
+                      <q-icon name="check" size="16px" />
+                    </button>
+                    <button class="admin-dept-cancel-btn" @click="editingHolidayDate = null">
+                      <q-icon name="close" size="16px" />
+                    </button>
+                  </div>
+                  <div v-else class="holiday-item-row">
+                    <div class="holiday-item-date">
+                      <q-icon name="event" size="14px" />
+                      <span>{{ formatHolidayDate(h.date) }}</span>
+                    </div>
+                    <div class="holiday-item-name">{{ h.name }}</div>
+                    <div class="holiday-item-type" :class="'holiday-type-' + (h.type || 'company')">
+                      {{ h.type === 'national' ? 'นักขัตฤกษ์' : h.type === 'special' ? 'พิเศษ' : 'บริษัท' }}
+                    </div>
+                    <div class="holiday-item-day">{{ getDayOfWeek(h.date) }}</div>
+                    <div class="holiday-item-actions">
+                      <button class="admin-dept-action-btn" @click="startEditHoliday(h)">
+                        <q-icon name="edit" size="14px" />
+                      </button>
+                      <button class="admin-dept-action-btn admin-dept-delete-btn" @click="handleRemoveHoliday(h)">
+                        <q-icon name="delete" size="14px" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Save result -->
+            <div v-if="holidaySaveResult" class="holiday-save-result" :class="holidaySaveResult.success ? 'holiday-result-success' : 'holiday-result-error'">
+              <q-icon :name="holidaySaveResult.success ? 'check_circle' : 'error'" size="16px" />
+              <span>{{ holidaySaveResult.message }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delete Holiday Confirm Dialog -->
+        <q-dialog v-model="showDeleteHolidayDialog" persistent class="confirm-dialog-backdrop">
+          <div class="confirm-dialog-card">
+            <div class="confirm-dialog-header">
+              <div class="confirm-dialog-icon-wrap" style="background: linear-gradient(135deg, rgba(239, 83, 80, 0.18) 0%, rgba(211, 47, 47, 0.10) 100%);">
+                <q-icon name="delete_forever" size="28px" style="color: #ef5350;" />
+              </div>
+              <div class="confirm-dialog-header-text">
+                <div class="confirm-dialog-title">ยืนยันลบวันหยุด</div>
+                <div class="confirm-dialog-subtitle">การลบจะมีผลทันทีและไม่สามารถย้อนกลับได้</div>
+              </div>
+            </div>
+            <div class="confirm-dialog-body" v-if="deletingHoliday">
+              <div class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="event" size="16px" />
+                  <span>วันที่</span>
+                </div>
+                <div class="confirm-preview-value confirm-text-value">
+                  {{ formatHolidayDate(deletingHoliday.date) }} ({{ getDayOfWeek(deletingHoliday.date) }})
+                </div>
+              </div>
+              <div class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="label" size="16px" />
+                  <span>ชื่อวันหยุด</span>
+                </div>
+                <div class="confirm-preview-value confirm-text-value">{{ deletingHoliday.name }}</div>
+              </div>
+              <div class="confirm-preview-row">
+                <div class="confirm-preview-label">
+                  <q-icon name="category" size="16px" />
+                  <span>ประเภท</span>
+                </div>
+                <div class="confirm-preview-value">
+                  <span class="holiday-item-type" :class="'holiday-type-' + (deletingHoliday.type || 'company')">
+                    {{ deletingHoliday.type === 'national' ? 'นักขัตฤกษ์' : deletingHoliday.type === 'special' ? 'พิเศษ' : 'บริษัท' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="confirm-dialog-actions">
+              <button class="confirm-cancel-btn" @click="showDeleteHolidayDialog = false">
+                <q-icon name="close" size="16px" />
+                <span>ยกเลิก</span>
+              </button>
+              <button class="confirm-send-btn" style="background: linear-gradient(135deg, #ef5350 0%, #d32f2f 100%);" @click="confirmDeleteHoliday">
+                <q-icon name="delete" size="16px" />
+                <span>ลบวันหยุด</span>
+              </button>
+            </div>
+          </div>
+        </q-dialog>
+
+        <!-- Copy from year dialog -->
+        <q-dialog v-model="showCopyDialog" persistent class="confirm-dialog-backdrop">
+          <div class="confirm-dialog-card">
+            <div class="confirm-dialog-header">
+              <div class="confirm-dialog-icon-wrap" style="background: linear-gradient(135deg, rgba(102, 187, 106, 0.18) 0%, rgba(76, 175, 80, 0.10) 100%);">
+                <q-icon name="content_copy" size="28px" style="color: #66bb6a;" />
+              </div>
+              <div class="confirm-dialog-header-text">
+                <div class="confirm-dialog-title">คัดลอกวันหยุดจากปีอื่น</div>
+                <div class="confirm-dialog-subtitle">จะคัดลอกวันหยุดมายังปี {{ holidayYear }} (ไม่ทับรายการที่มีอยู่แล้ว)</div>
+              </div>
+            </div>
+            <div class="confirm-dialog-body">
+              <div class="notif-field">
+                <label class="notif-field-label">คัดลอกจากปี</label>
+                <select v-model="copySourceYear" class="admin-select">
+                  <option v-for="y in availableYears.filter(y => y !== holidayYear)" :key="y" :value="y">{{ y }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="confirm-dialog-actions">
+              <button class="confirm-cancel-btn" @click="showCopyDialog = false">
+                <q-icon name="close" size="16px" />
+                <span>ยกเลิก</span>
+              </button>
+              <button class="confirm-send-btn" style="background: linear-gradient(135deg, #66bb6a 0%, #4caf50 100%);" @click="handleCopyFromYear">
+                <q-icon name="content_copy" size="16px" />
+                <span>คัดลอก</span>
+              </button>
+            </div>
+          </div>
+        </q-dialog>
       </div>
 
       <!-- Notifications Tab -->
@@ -569,6 +789,179 @@
           </div>
         </div>
       </div>
+
+      <!-- Punch/Attendance Import Tab -->
+      <div v-if="activeTab === 'punch'" class="admin-section">
+        <div class="import-card">
+          <div class="import-card-header">
+            <q-icon name="fingerprint" size="20px" style="color: #ab47bc;" />
+            <span class="import-card-title">นำเข้าเวลาสแกนนิ้ว</span>
+          </div>
+
+          <div class="import-card-body">
+            <div class="import-info-box">
+              <q-icon name="info" size="16px" />
+              <span>นำเข้าไฟล์เวลาสแกนนิ้วจากเครื่อง (.xls / .xlsx) ระบบจะจับคู่ Punch ID กับผู้ใช้ในระบบ</span>
+            </div>
+
+            <!-- File Upload -->
+            <div v-if="!punchFile" class="import-drop-zone"
+              :class="{ 'import-drop-active': punchDragging }"
+              @dragover.prevent="punchDragging = true"
+              @dragleave.prevent="punchDragging = false"
+              @drop.prevent="handlePunchDrop">
+              <q-icon name="fingerprint" size="40px" style="color: #3a3b3e;" />
+              <div class="import-drop-text">ลากไฟล์มาวางที่นี่ หรือ</div>
+              <label class="import-browse-btn">
+                <input type="file" accept=".xls,.xlsx" hidden @change="handlePunchFileSelect" />
+                <q-icon name="folder_open" size="16px" />
+                <span>เลือกไฟล์</span>
+              </label>
+              <div class="import-drop-hint">รองรับ .xls และ .xlsx จากเครื่องสแกนนิ้ว</div>
+            </div>
+
+            <!-- File Selected -->
+            <div v-if="punchFile" class="import-file-info">
+              <div class="import-file-row">
+                <q-icon name="description" size="18px" style="color: #ab47bc;" />
+                <span class="import-file-name">{{ punchFile.name }}</span>
+                <span class="import-file-size">{{ (punchFile.size / 1024).toFixed(1) }} KB</span>
+                <button class="import-clear-btn" @click="clearPunchImport">
+                  <q-icon name="close" size="14px" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Parse Error -->
+            <div v-if="punchParseError" class="import-result-box import-result-warn">
+              <q-icon name="error" size="20px" />
+              <span>{{ punchParseError }}</span>
+            </div>
+
+            <!-- Loading -->
+            <div v-if="punchParsing" class="admin-empty" style="padding: 24px 0;">
+              <q-spinner size="24px" color="purple" />
+              <span>กำลังอ่านไฟล์...</span>
+            </div>
+
+            <!-- Preview -->
+            <div v-if="punchPreview.length > 0 && !punchParsing">
+              <!-- Summary -->
+              <div class="punch-summary-row">
+                <div class="punch-summary-item">
+                  <q-icon name="people" size="16px" />
+                  <span>พนักงาน {{ punchPreview.length }} คน</span>
+                </div>
+                <div class="punch-summary-item">
+                  <q-icon name="calendar_month" size="16px" />
+                  <span>{{ punchMonth }}</span>
+                </div>
+                <div v-if="punchMatchedCount < punchPreview.length" class="punch-summary-item punch-summary-warn">
+                  <q-icon name="warning" size="16px" />
+                  <span>จับคู่ได้ {{ punchMatchedCount }}/{{ punchPreview.length }} คน</span>
+                </div>
+                <div v-else class="punch-summary-item punch-summary-ok">
+                  <q-icon name="check_circle" size="16px" />
+                  <span>จับคู่ครบทุกคน</span>
+                </div>
+              </div>
+
+              <!-- Duplicate Warning -->
+              <div v-if="Object.keys(punchDuplicates).length > 0" class="punch-dup-warning">
+                <div class="punch-dup-header">
+                  <q-icon name="warning_amber" size="18px" />
+                  <span>พบข้อมูลซ้ำ {{ Object.keys(punchDuplicates).length }} คน ในเดือนนี้</span>
+                </div>
+                <div class="punch-dup-options">
+                  <label class="punch-dup-option" @click="punchDupAction = 'overwrite'">
+                    <div class="admin-toggle-track" :class="{ 'admin-toggle-active': punchDupAction === 'overwrite' }">
+                      <div class="admin-toggle-thumb"></div>
+                    </div>
+                    <span>เขียนทับข้อมูลเดิม</span>
+                  </label>
+                  <label class="punch-dup-option" @click="punchDupAction = 'skip'">
+                    <div class="admin-toggle-track" :class="{ 'admin-toggle-active': punchDupAction === 'skip' }">
+                      <div class="admin-toggle-thumb"></div>
+                    </div>
+                    <span>ข้ามคนที่มีข้อมูลแล้ว</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Preview Table -->
+              <div class="import-table-wrapper" style="max-height: 420px;">
+                <table class="import-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px;">#</th>
+                      <th>Punch ID</th>
+                      <th>ชื่อ (จากไฟล์)</th>
+                      <th>แผนก (จากไฟล์)</th>
+                      <th>ผู้ใช้ในระบบ</th>
+                      <th>จำนวนวัน</th>
+                      <th>สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(emp, idx) in punchPreview" :key="emp.punchId">
+                      <td style="color: #6b6c6f;">{{ idx + 1 }}</td>
+                      <td style="font-family: monospace;">{{ emp.punchId }}</td>
+                      <td>{{ emp.nameFromFile }}</td>
+                      <td>{{ emp.deptFromFile }}</td>
+                      <td>
+                        <span v-if="emp.matchedUser" style="color: #66bb6a;">
+                          {{ emp.matchedUser.firstName }} {{ emp.matchedUser.lastName }}
+                        </span>
+                        <span v-else style="color: #ef5350;">ไม่พบในระบบ</span>
+                      </td>
+                      <td>{{ emp.dayCount }} วัน</td>
+                      <td>
+                        <span v-if="!emp.matchedUser" class="punch-status-badge punch-status-unmatched">
+                          <q-icon name="link_off" size="12px" /> ไม่จับคู่
+                        </span>
+                        <span v-else-if="punchDuplicates[emp.matchedUser.email]" class="punch-status-badge punch-status-dup">
+                          <q-icon name="warning" size="12px" /> ซ้ำ
+                        </span>
+                        <span v-else class="punch-status-badge punch-status-ok">
+                          <q-icon name="check" size="12px" /> พร้อม
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Actions -->
+              <div class="import-actions" style="margin-top: 14px;">
+                <div style="flex: 1;"></div>
+                <div v-if="punchUnmatchedCount > 0" class="import-skip-hint">
+                  <q-icon name="warning" size="14px" style="color: #ffb74d;" />
+                  <span>จะนำเข้าเฉพาะ {{ punchImportableCount }} คนที่จับคู่ได้ (ข้าม {{ punchUnmatchedCount }} คน)</span>
+                </div>
+                <button class="import-submit-btn" style="background: linear-gradient(135deg, #ab47bc 0%, #7b1fa2 100%);"
+                  :disabled="punchImportableCount === 0 || attendanceStore.loading"
+                  @click="handlePunchImport">
+                  <q-spinner v-if="attendanceStore.loading" size="16px" color="white" />
+                  <q-icon v-else name="cloud_upload" size="16px" />
+                  <span>{{ attendanceStore.loading ? 'กำลังนำเข้า...' : `นำเข้า ${punchImportableCount} คน` }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Import Result -->
+            <div v-if="punchImportResult" class="import-result-box" :class="punchImportResult.errors.length > 0 ? 'import-result-warn' : 'import-result-success'">
+              <q-icon :name="punchImportResult.errors.length > 0 ? 'warning' : 'check_circle'" size="20px" />
+              <div>
+                <div class="import-result-title">นำเข้าสำเร็จ {{ punchImportResult.success }} รายการ</div>
+                <div v-if="punchImportResult.errors.length > 0" class="import-result-errors">
+                  ผิดพลาด {{ punchImportResult.errors.length }} รายการ:
+                  <div v-for="(err, i) in punchImportResult.errors" :key="i" style="font-size: 0.7rem;">{{ err }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </q-page>
 </template>
@@ -580,6 +973,8 @@ import { useDepartmentsStore } from 'stores/departments'
 import { useProjectsStore } from 'stores/projects'
 import { useLeaveStore } from 'stores/leave'
 import { useNotificationsStore } from 'stores/notifications'
+import { useHolidayStore } from 'stores/holiday'
+import { useAttendanceStore } from 'stores/attendance'
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore'
 import { db } from 'boot/firebase'
 import * as XLSX from 'xlsx'
@@ -589,6 +984,8 @@ const deptStore = useDepartmentsStore()
 const projectsStore = useProjectsStore()
 const leaveStore = useLeaveStore()
 const notificationsStore = useNotificationsStore()
+const holidayStore = useHolidayStore()
+const attendanceStore = useAttendanceStore()
 
 const activeTab = ref('users')
 const userSearch = ref('')
@@ -603,7 +1000,8 @@ onMounted(async () => {
   await Promise.all([
     authStore.fetchAllProfiles(),
     deptStore.fetchDepartments(),
-    projectsStore.fetchAllProjects()
+    projectsStore.fetchAllProjects(),
+    holidayStore.fetchHolidays(holidayYear.value)
   ])
 
   // Load broadcast history for notifications tab
@@ -616,7 +1014,8 @@ onMounted(async () => {
     editState.value[u.email || u.id] = {
       role: u.role || 'employee',
       department: u.department || '',
-      skipHeadApproval: u.skipHeadApproval || false
+      skipHeadApproval: u.skipHeadApproval || false,
+      punchId: u.punchId || ''
     }
   })
 })
@@ -636,25 +1035,43 @@ const filteredUsers = computed(() => {
 const getEditRole = (usr) => editState.value[usr.email || usr.id]?.role || usr.role || 'employee'
 const getEditDept = (usr) => editState.value[usr.email || usr.id]?.department ?? usr.department ?? ''
 const getEditSkipHead = (usr) => editState.value[usr.email || usr.id]?.skipHeadApproval ?? usr.skipHeadApproval ?? false
+const getEditPunchId = (usr) => editState.value[usr.email || usr.id]?.punchId ?? usr.punchId ?? ''
 const setEditRole = (usr, val) => {
   const key = usr.email || usr.id
-  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false, punchId: usr.punchId || '' }
   editState.value[key].role = val
 }
 const setEditDept = (usr, val) => {
   const key = usr.email || usr.id
-  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false, punchId: usr.punchId || '' }
   editState.value[key].department = val
 }
 const setEditSkipHead = (usr, val) => {
   const key = usr.email || usr.id
-  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false }
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false, punchId: usr.punchId || '' }
   editState.value[key].skipHeadApproval = val
+}
+const setEditPunchId = (usr, val) => {
+  const key = usr.email || usr.id
+  if (!editState.value[key]) editState.value[key] = { role: usr.role || 'employee', department: usr.department || '', skipHeadApproval: usr.skipHeadApproval || false, punchId: usr.punchId || '' }
+  editState.value[key].punchId = val
+}
+const punchIdDuplicateWarning = (usr) => {
+  const pid = getEditPunchId(usr)
+  if (!pid) return ''
+  const key = usr.email || usr.id
+  const dup = authStore.allProfiles.find(u => {
+    const uKey = u.email || u.id
+    if (uKey === key) return false
+    const otherPid = editState.value[uKey]?.punchId ?? u.punchId ?? ''
+    return otherPid === pid
+  })
+  return dup ? `Punch ID ซ้ำกับ ${dup.firstName || dup.email}` : ''
 }
 const isUserChanged = (usr) => {
   const e = editState.value[usr.email || usr.id]
   if (!e) return false
-  return e.role !== (usr.role || 'employee') || e.department !== (usr.department || '') || e.skipHeadApproval !== (usr.skipHeadApproval || false)
+  return e.role !== (usr.role || 'employee') || e.department !== (usr.department || '') || e.skipHeadApproval !== (usr.skipHeadApproval || false) || e.punchId !== (usr.punchId || '')
 }
 
 // Get projects a user belongs to
@@ -677,7 +1094,8 @@ const handleSaveUser = async (usr) => {
   const success = await authStore.updateUserRole(key, {
     role: edit.role,
     department: edit.department,
-    skipHeadApproval: edit.skipHeadApproval || false
+    skipHeadApproval: edit.skipHeadApproval || false,
+    punchId: edit.punchId || ''
   })
   savingUser.value = null
   if (success) {
@@ -899,6 +1317,401 @@ const handleImport = async () => {
     importPreview.value = []
     importFile.value = null
   }
+}
+
+// ====== Punch/Attendance Import ======
+const punchDragging = ref(false)
+const punchFile = ref(null)
+const punchParsing = ref(false)
+const punchParseError = ref('')
+const punchPreview = ref([])
+const punchMonth = ref('')
+const punchYear = ref('')
+const punchDuplicates = ref({})
+const punchDupAction = ref('overwrite')
+const punchImportResult = ref(null)
+
+const punchMatchedCount = computed(() => punchPreview.value.filter(e => e.matchedUser).length)
+const punchUnmatchedCount = computed(() => punchPreview.value.filter(e => !e.matchedUser).length)
+const punchImportableCount = computed(() => {
+  if (punchDupAction.value === 'skip') {
+    return punchPreview.value.filter(e => e.matchedUser && !punchDuplicates.value[e.matchedUser.email]).length
+  }
+  return punchMatchedCount.value
+})
+
+const clearPunchImport = () => {
+  punchFile.value = null
+  punchPreview.value = []
+  punchParseError.value = ''
+  punchParsing.value = false
+  punchMonth.value = ''
+  punchYear.value = ''
+  punchDuplicates.value = {}
+  punchDupAction.value = 'overwrite'
+  punchImportResult.value = null
+}
+
+const handlePunchFileSelect = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    punchFile.value = file
+    parsePunchFile(file)
+  }
+}
+
+const handlePunchDrop = (event) => {
+  punchDragging.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+    punchFile.value = file
+    parsePunchFile(file)
+  } else {
+    punchParseError.value = 'กรุณาใช้ไฟล์ .xls หรือ .xlsx'
+  }
+}
+
+const parsePunchFile = (file) => {
+  punchPreview.value = []
+  punchParseError.value = ''
+  punchImportResult.value = null
+  punchParsing.value = true
+
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result)
+      const wb = XLSX.read(data, { type: 'array', raw: true })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      if (!sheet) {
+        punchParseError.value = 'ไม่พบข้อมูลใน Sheet แรก'
+        punchParsing.value = false
+        return
+      }
+
+      // Get raw rows as 2D array
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true })
+      if (rows.length < 3) {
+        punchParseError.value = 'ไฟล์ไม่มีข้อมูลเพียงพอ'
+        punchParsing.value = false
+        return
+      }
+
+      // Parse title row to extract year and month
+      const titleRow = String(rows[0]?.[0] || '')
+      const titleMatch = titleRow.match(/(\d{4}):(\d{1,2})\/(\d{1,2})-(\d{1,2})\/(\d{1,2})/)
+      let year = new Date().getFullYear()
+      let month = 1
+      if (titleMatch) {
+        year = parseInt(titleMatch[1])
+        month = parseInt(titleMatch[2])
+      }
+      punchYear.value = year
+      punchMonth.value = `${year}-${String(month).padStart(2, '0')}`
+
+      // Build profiles map by punchId
+      const profilesByPunchId = {}
+      authStore.allProfiles.forEach(p => {
+        if (p.punchId) {
+          profilesByPunchId[p.punchId] = p
+        }
+      })
+
+      // Parse employee blocks
+      const employees = []
+      let i = 1 // Skip title row
+      while (i < rows.length) {
+        const row = rows[i]
+        const cellVal = String(row?.[0] || '').trim()
+
+        // Look for employee header: "ID:00000001  ชื่อ:..."
+        const headerMatch = cellVal.match(/ID:(\d+)\s+ชื่อ:(\S+)\s+แผนก:(\S+)\s+ตารางเวลา:(\S+)/)
+        if (headerMatch) {
+          const punchId = headerMatch[1]
+          const nameFromFile = headerMatch[2]
+          const deptFromFile = headerMatch[3]
+          const shift = headerMatch[4]
+
+          // Next row should be day numbers (1-31), skip it
+          i++
+          // The row after that should be the time data
+          i++
+          if (i >= rows.length) break
+
+          const timeRow = rows[i]
+          const days = []
+
+          for (let d = 0; d < 31; d++) {
+            const cellValue = String(timeRow?.[d] || '').trim()
+            if (cellValue) {
+              const times = cellValue.split(/\s+/).filter(t => /^\d{1,2}:\d{2}$/.test(t))
+              if (times.length > 0) {
+                days.push({
+                  day: d + 1,
+                  date: `${year}-${String(month).padStart(2, '0')}-${String(d + 1).padStart(2, '0')}`,
+                  punchIn: times[0] || null,
+                  punchOut: times[1] || null
+                })
+              }
+            }
+          }
+
+          const matchedUser = profilesByPunchId[punchId] || null
+
+          employees.push({
+            punchId,
+            nameFromFile,
+            deptFromFile,
+            shift,
+            matchedUser,
+            dayCount: days.length,
+            days
+          })
+        }
+        i++
+      }
+
+      if (employees.length === 0) {
+        punchParseError.value = 'ไม่พบข้อมูลพนักงานในไฟล์ — กรุณาตรวจสอบรูปแบบไฟล์'
+        punchParsing.value = false
+        return
+      }
+
+      punchPreview.value = employees
+
+      // Check for duplicates
+      const matchedUserIds = employees.filter(e => e.matchedUser).map(e => e.matchedUser.email)
+      if (matchedUserIds.length > 0) {
+        punchDuplicates.value = await attendanceStore.checkDuplicates(matchedUserIds, punchMonth.value)
+      }
+    } catch (err) {
+      console.error('Error parsing punch file:', err)
+      punchParseError.value = 'ไม่สามารถอ่านไฟล์ได้ — กรุณาตรวจสอบรูปแบบไฟล์'
+    } finally {
+      punchParsing.value = false
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+const handlePunchImport = async () => {
+  if (punchImportableCount.value === 0) return
+
+  const confirmed = confirm(`ยืนยันนำเข้าเวลาสแกนนิ้ว ${punchImportableCount.value} คน?`)
+  if (!confirmed) return
+
+  // Build records to import
+  const records = []
+  const overwriteUserIds = []
+
+  for (const emp of punchPreview.value) {
+    if (!emp.matchedUser) continue
+    const userId = emp.matchedUser.email
+
+    // Skip duplicates if action is 'skip'
+    if (punchDupAction.value === 'skip' && punchDuplicates.value[userId]) continue
+
+    // Mark for overwrite if needed
+    if (punchDuplicates.value[userId] && punchDupAction.value === 'overwrite') {
+      overwriteUserIds.push(userId)
+    }
+
+    for (const day of emp.days) {
+      records.push({
+        userId,
+        userName: `${emp.matchedUser.firstName || ''} ${emp.matchedUser.lastName || ''}`.trim(),
+        punchId: emp.punchId,
+        date: day.date,
+        punchIn: day.punchIn,
+        punchOut: day.punchOut,
+        department: emp.matchedUser.department || emp.deptFromFile,
+        shift: emp.shift,
+        importedBy: authStore.profile?.email || '',
+        importMonth: punchMonth.value
+      })
+    }
+  }
+
+  const result = await attendanceStore.importAttendance(records, overwriteUserIds)
+  punchImportResult.value = result
+
+  if (result.success > 0) {
+    punchPreview.value = []
+    punchFile.value = null
+  }
+}
+
+// ====== Company Holidays ======
+const currentYear = new Date().getFullYear()
+const holidayYear = ref(currentYear)
+const availableYears = computed(() => {
+  const years = []
+  for (let y = currentYear - 1; y <= currentYear + 2; y++) {
+    years.push(y)
+  }
+  return years
+})
+
+// Add holiday form
+const newHolidayDate = ref('')
+const newHolidayName = ref('')
+const newHolidayType = ref('company')
+
+// Edit holiday state
+const editingHolidayDate = ref(null)
+const editHolidayNewDate = ref('')
+const editHolidayName = ref('')
+const editHolidayType = ref('company')
+
+// Delete holiday dialog
+const showDeleteHolidayDialog = ref(false)
+const deletingHoliday = ref(null)
+
+// Copy dialog
+const showCopyDialog = ref(false)
+const copySourceYear = ref(currentYear - 1)
+
+// Save result notification
+const holidaySaveResult = ref(null)
+
+// Sorted holidays for display
+const editableHolidays = computed(() => {
+  return [...holidayStore.holidays].sort((a, b) => a.date.localeCompare(b.date))
+})
+
+// Load holidays when year changes
+const loadHolidaysForYear = async () => {
+  await holidayStore.fetchHolidays(holidayYear.value)
+}
+
+// Format date for display
+const formatHolidayDate = (dateStr) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// Get day of week
+const getDayOfWeek = (dateStr) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('th-TH', { weekday: 'short' })
+}
+
+// Add a holiday
+const handleAddHoliday = async () => {
+  if (!newHolidayDate.value || !newHolidayName.value.trim()) return
+
+  const dateYear = parseInt(newHolidayDate.value.split('-')[0])
+  if (dateYear !== holidayYear.value) {
+    holidaySaveResult.value = { success: false, message: `วันที่ต้องอยู่ในปี ${holidayYear.value}` }
+    setTimeout(() => { holidaySaveResult.value = null }, 3000)
+    return
+  }
+
+  const success = await holidayStore.addHoliday(
+    holidayYear.value,
+    newHolidayDate.value,
+    newHolidayName.value.trim(),
+    newHolidayType.value
+  )
+
+  if (success) {
+    newHolidayDate.value = ''
+    newHolidayName.value = ''
+    newHolidayType.value = 'company'
+    holidaySaveResult.value = { success: true, message: 'เพิ่มวันหยุดเรียบร้อย' }
+  } else {
+    holidaySaveResult.value = { success: false, message: holidayStore.error || 'เกิดข้อผิดพลาด' }
+  }
+  setTimeout(() => { holidaySaveResult.value = null }, 3000)
+}
+
+// Remove a holiday (open dialog)
+const handleRemoveHoliday = (h) => {
+  deletingHoliday.value = h
+  showDeleteHolidayDialog.value = true
+}
+
+// Confirm delete holiday
+const confirmDeleteHoliday = async () => {
+  if (!deletingHoliday.value) return
+  showDeleteHolidayDialog.value = false
+  const h = deletingHoliday.value
+  deletingHoliday.value = null
+
+  const success = await holidayStore.removeHoliday(holidayYear.value, h.date)
+  if (success) {
+    holidaySaveResult.value = { success: true, message: 'ลบวันหยุดเรียบร้อย' }
+  } else {
+    holidaySaveResult.value = { success: false, message: holidayStore.error || 'เกิดข้อผิดพลาด' }
+  }
+  setTimeout(() => { holidaySaveResult.value = null }, 3000)
+}
+
+// Start editing a holiday
+const startEditHoliday = (h) => {
+  editingHolidayDate.value = h.date
+  editHolidayNewDate.value = h.date
+  editHolidayName.value = h.name
+  editHolidayType.value = h.type || 'company'
+}
+
+// Save edited holiday
+const handleUpdateHoliday = async (oldDate) => {
+  if (!editHolidayNewDate.value || !editHolidayName.value.trim()) return
+  const success = await holidayStore.updateHoliday(
+    holidayYear.value,
+    oldDate,
+    editHolidayNewDate.value,
+    editHolidayName.value.trim(),
+    editHolidayType.value
+  )
+  if (success) {
+    editingHolidayDate.value = null
+    holidaySaveResult.value = { success: true, message: 'แก้ไขวันหยุดเรียบร้อย' }
+  } else {
+    holidaySaveResult.value = { success: false, message: holidayStore.error || 'เกิดข้อผิดพลาด' }
+  }
+  setTimeout(() => { holidaySaveResult.value = null }, 3000)
+}
+
+// Load Thai national holiday presets
+const loadThaiPresets = async () => {
+  const presets = holidayStore.getThaiHolidayPresets(holidayYear.value)
+  const existingDates = new Set(holidayStore.holidays.map(h => h.date))
+  const newOnes = presets.filter(p => !existingDates.has(p.date))
+
+  if (newOnes.length === 0) {
+    holidaySaveResult.value = { success: true, message: 'วันหยุดนักขัตฤกษ์ทั้งหมดมีอยู่แล้ว' }
+    setTimeout(() => { holidaySaveResult.value = null }, 3000)
+    return
+  }
+
+  const merged = [...holidayStore.holidays, ...newOnes]
+  const success = await holidayStore.saveHolidays(holidayYear.value, merged)
+  if (success) {
+    await holidayStore.fetchHolidays(holidayYear.value)
+    holidaySaveResult.value = { success: true, message: `เพิ่มวันหยุดนักขัตฤกษ์ ${newOnes.length} วัน` }
+  } else {
+    holidaySaveResult.value = { success: false, message: holidayStore.error || 'เกิดข้อผิดพลาด' }
+  }
+  setTimeout(() => { holidaySaveResult.value = null }, 3000)
+}
+
+// Copy holidays from another year
+const handleCopyFromYear = async () => {
+  showCopyDialog.value = false
+  const success = await holidayStore.copyFromYear(copySourceYear.value, holidayYear.value)
+  if (success) {
+    await holidayStore.fetchHolidays(holidayYear.value)
+    holidaySaveResult.value = { success: true, message: `คัดลอกวันหยุดจากปี ${copySourceYear.value} เรียบร้อย` }
+  } else {
+    holidaySaveResult.value = { success: false, message: holidayStore.error || 'เกิดข้อผิดพลาด' }
+  }
+  setTimeout(() => { holidaySaveResult.value = null }, 3000)
 }
 
 // ====== Admin Notifications ======
@@ -1382,6 +2195,15 @@ const formatBroadcastTime = (ts) => {
 .admin-save-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.admin-punch-id-warn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: #ffb74d;
+  margin-top: 2px;
 }
 
 .admin-save-success {
@@ -2431,6 +3253,318 @@ const formatBroadcastTime = (ts) => {
   color: #6b6c6f;
 }
 
+/* ====== Holidays Tab ====== */
+.holiday-card {
+  background: rgba(30, 33, 36, 0.5);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.holiday-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.25);
+}
+
+.holiday-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e1e2e5;
+}
+
+.holiday-year-select {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  background: rgba(22, 24, 26, 0.8);
+  color: #e1e2e5;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.holiday-year-select:focus {
+  border-color: rgba(102, 187, 106, 0.5);
+}
+
+.holiday-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.holiday-actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.holiday-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.holiday-action-btn:hover:not(:disabled) {
+  background: rgba(58, 59, 62, 0.3);
+  color: #cecfd2;
+}
+
+.holiday-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.holiday-preset-btn:hover:not(:disabled) {
+  border-color: rgba(102, 187, 106, 0.4);
+  color: #66bb6a;
+}
+
+.holiday-copy-btn:hover:not(:disabled) {
+  border-color: rgba(92, 156, 230, 0.4);
+  color: #5c9ce6;
+}
+
+/* Add Holiday Form */
+.holiday-add-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.holiday-add-fields {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.holiday-date-input {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  background: rgba(22, 24, 26, 0.8);
+  color: #e1e2e5;
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+  min-width: 150px;
+}
+
+.holiday-date-input:focus {
+  border-color: rgba(102, 187, 106, 0.5);
+}
+
+.holiday-name-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  background: rgba(22, 24, 26, 0.8);
+  color: #e1e2e5;
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.holiday-name-input::placeholder {
+  color: #4b5563;
+}
+
+.holiday-name-input:focus {
+  border-color: rgba(102, 187, 106, 0.5);
+}
+
+.holiday-type-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.5);
+  background: rgba(22, 24, 26, 0.8);
+  color: #e1e2e5;
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.holiday-type-select:focus {
+  border-color: rgba(102, 187, 106, 0.5);
+}
+
+.holiday-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #66bb6a 0%, #4caf50 100%);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.holiday-add-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(102, 187, 106, 0.3);
+}
+
+.holiday-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Holiday List */
+.holiday-list {
+  border: 1px solid rgba(58, 59, 62, 0.25);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.holiday-list-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(22, 24, 26, 0.4);
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.holiday-count-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #66bb6a;
+  background: rgba(102, 187, 106, 0.12);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+.holiday-item {
+  border-bottom: 1px solid rgba(58, 59, 62, 0.15);
+}
+
+.holiday-item:last-child {
+  border-bottom: none;
+}
+
+.holiday-item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  transition: background 0.15s;
+}
+
+.holiday-item-row:hover {
+  background: rgba(58, 59, 62, 0.12);
+}
+
+.holiday-item-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.holiday-item-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #9ca3af;
+  min-width: 150px;
+}
+
+.holiday-item-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e1e2e5;
+  min-width: 0;
+}
+
+.holiday-item-type {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.holiday-type-national {
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.12);
+}
+
+.holiday-type-company {
+  color: #42a5f5;
+  background: rgba(66, 165, 245, 0.12);
+}
+
+.holiday-type-special {
+  color: #ffb74d;
+  background: rgba(255, 183, 77, 0.12);
+}
+
+.holiday-item-day {
+  font-size: 0.78rem;
+  color: #6b6c6f;
+  min-width: 30px;
+  text-align: center;
+}
+
+.holiday-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Save result */
+.holiday-save-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.holiday-result-success {
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
+  border: 1px solid rgba(102, 187, 106, 0.2);
+}
+
+.holiday-result-error {
+  background: rgba(239, 83, 80, 0.12);
+  color: #ef5350;
+  border: 1px solid rgba(239, 83, 80, 0.2);
+}
+
 @media (max-width: 640px) {
   .admin-page { padding: 16px; }
   .admin-user-fields { flex-direction: column; gap: 8px; }
@@ -2439,6 +3573,12 @@ const formatBroadcastTime = (ts) => {
   .import-actions { flex-direction: column; align-items: stretch; }
   .import-skip-hint { order: -1; }
   .notif-target-options { flex-direction: column; }
+  .holiday-add-form { flex-direction: column; }
+  .holiday-add-fields { flex-direction: column; }
+  .holiday-actions-row { flex-direction: column; }
+  .holiday-item-row { flex-wrap: wrap; }
+  .holiday-item-date { min-width: 100%; }
+  .holiday-item-edit { flex-direction: column; }
 }
 </style>
 
@@ -2653,5 +3793,85 @@ const formatBroadcastTime = (ts) => {
   .confirm-dialog-card { width: 100%; }
   .confirm-preview-row:not(.confirm-preview-msg-row) { flex-direction: column; gap: 4px; }
   .confirm-preview-label { min-width: unset; }
+}
+
+/* Punch Import Styles */
+.punch-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(24, 25, 28, 0.5);
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.punch-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #cecfd2;
+}
+
+.punch-summary-warn { color: #ffb74d; }
+.punch-summary-ok { color: #66bb6a; }
+
+.punch-dup-warning {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  background: rgba(255, 183, 77, 0.06);
+  border: 1px solid rgba(255, 183, 77, 0.25);
+  border-radius: 10px;
+}
+
+.punch-dup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #ffb74d;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.punch-dup-options {
+  display: flex;
+  gap: 20px;
+}
+
+.punch-dup-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: #cecfd2;
+}
+
+.punch-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.punch-status-ok {
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
+}
+
+.punch-status-unmatched {
+  background: rgba(239, 83, 80, 0.12);
+  color: #ef5350;
+}
+
+.punch-status-dup {
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffb74d;
 }
 </style>

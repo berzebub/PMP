@@ -157,13 +157,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Update another user's role/department (super_admin only)
-  const updateUserRole = async (email, { role, department, skipHeadApproval }) => {
+  const updateUserRole = async (email, { role, department, skipHeadApproval, punchId }) => {
     if (profile.value.role !== 'super_admin') return false
     try {
       loading.value = true
       const data = { role, department, updatedAt: new Date() }
       if (skipHeadApproval !== undefined) {
         data.skipHeadApproval = !!skipHeadApproval
+      }
+      if (punchId !== undefined) {
+        data.punchId = punchId || ''
       }
       await updateDoc(doc(db, 'profiles', email), data)
       // Update local allProfiles

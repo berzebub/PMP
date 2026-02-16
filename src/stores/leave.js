@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore'
 import { db } from 'boot/firebase'
 import { useAuthStore } from './auth'
+import { useHolidayStore } from './holiday'
 
 export const useLeaveStore = defineStore('leave', () => {
   const myLeaves = ref([])
@@ -191,7 +192,17 @@ export const useLeaveStore = defineStore('leave', () => {
   const cancelLeave = async (leaveId) => {
     try {
       loading.value = true
+      error.value = null
       const leaveRef = doc(db, 'leaves', leaveId)
+
+      // Verify current status before cancelling
+      const leaveSnap = await getDoc(leaveRef)
+      const currentStatus = leaveSnap.data()?.status
+      if (currentStatus !== 'pending_head' && currentStatus !== 'pending_hr') {
+        error.value = 'ไม่สามารถยกเลิกใบลาที่ไม่ได้อยู่ในสถานะรออนุมัติ'
+        return false
+      }
+
       await updateDoc(leaveRef, {
         status: 'cancelled',
         updatedAt: Timestamp.now()
@@ -213,11 +224,65 @@ export const useLeaveStore = defineStore('leave', () => {
     }
   }
 
+  // Admin cancel approved leave (HR / super_admin only)
+  const adminCancelLeave = async (leaveId, reason = '') => {
+    const role = authStore.profile.role
+    if (role !== 'hr' && role !== 'super_admin') return false
+
+    try {
+      loading.value = true
+      error.value = null
+      const leaveRef = doc(db, 'leaves', leaveId)
+
+      // Verify current status before cancelling
+      const leaveSnap = await getDoc(leaveRef)
+      if (leaveSnap.data()?.status !== 'approved') {
+        error.value = 'สามารถยกเลิกได้เฉพาะใบลาที่อนุมัติแล้วเท่านั้น'
+        return false
+      }
+
+      await updateDoc(leaveRef, {
+        status: 'cancelled',
+        cancelledBy: authStore.user.email,
+        cancelledByName: authStore.fullName,
+        cancelReason: reason.trim(),
+        cancelledAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      })
+
+      // Update local arrays
+      const idx = myLeaves.value.findIndex(l => l.id === leaveId)
+      if (idx !== -1) {
+        myLeaves.value[idx].status = 'cancelled'
+      }
+      const tIdx = teamLeaves.value.findIndex(l => l.id === leaveId)
+      if (tIdx !== -1) {
+        teamLeaves.value[tIdx].status = 'cancelled'
+      }
+      return true
+    } catch (err) {
+      console.error('Error admin cancelling leave:', err)
+      error.value = err.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   // Head approves (pending_head -> pending_hr)
   const headApprove = async (leaveId) => {
     try {
       loading.value = true
+      error.value = null
       const leaveRef = doc(db, 'leaves', leaveId)
+
+      // Verify current status to prevent race conditions
+      const leaveSnap = await getDoc(leaveRef)
+      if (leaveSnap.data()?.status !== 'pending_head') {
+        error.value = 'สถานะใบลาเปลี่ยนไปแล้ว กรุณารีเฟรชข้อมูล'
+        return false
+      }
+
       const approvalData = {
         approvedBy: authStore.user.email,
         approvedByName: authStore.fullName,
@@ -245,7 +310,16 @@ export const useLeaveStore = defineStore('leave', () => {
   const hrApprove = async (leaveId) => {
     try {
       loading.value = true
+      error.value = null
       const leaveRef = doc(db, 'leaves', leaveId)
+
+      // Verify current status to prevent race conditions
+      const leaveSnap = await getDoc(leaveRef)
+      if (leaveSnap.data()?.status !== 'pending_hr') {
+        error.value = 'สถานะใบลาเปลี่ยนไปแล้ว กรุณารีเฟรชข้อมูล'
+        return false
+      }
+
       const approvalData = {
         approvedBy: authStore.user.email,
         approvedByName: authStore.fullName,
@@ -273,7 +347,17 @@ export const useLeaveStore = defineStore('leave', () => {
   const rejectLeave = async (leaveId, reason = '') => {
     try {
       loading.value = true
+      error.value = null
       const leaveRef = doc(db, 'leaves', leaveId)
+
+      // Verify current status to prevent race conditions
+      const leaveSnap = await getDoc(leaveRef)
+      const currentStatus = leaveSnap.data()?.status
+      if (currentStatus !== 'pending_head' && currentStatus !== 'pending_hr') {
+        error.value = 'สถานะใบลาเปลี่ยนไปแล้ว กรุณารีเฟรชข้อมูล'
+        return false
+      }
+
       await updateDoc(leaveRef, {
         status: 'rejected',
         rejectedBy: authStore.user.email,
@@ -285,6 +369,99 @@ export const useLeaveStore = defineStore('leave', () => {
       return true
     } catch (err) {
       console.error('Error rejecting leave:', err)
+      error.value = err.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Head revokes their approval (pending_hr -> rejected)
+  const headRevokeApproval = async (leaveId, reason = '') => {
+    const role = authStore.profile.role
+    if (role !== 'head' && role !== 'hr' && role !== 'super_admin') return false
+
+    try {
+      loading.value = true
+      error.value = null
+      const leaveRef = doc(db, 'leaves', leaveId)
+
+      const leaveSnap = await getDoc(leaveRef)
+      if (leaveSnap.data()?.status !== 'pending_hr') {
+        error.value = 'สถานะใบลาเปลี่ยนไปแล้ว (อาจถูก HR ดำเนินการแล้ว) กรุณารีเฟรชข้อมูล'
+        return false
+      }
+
+      await updateDoc(leaveRef, {
+        status: 'rejected',
+        rejectedBy: authStore.user.email,
+        rejectionReason: reason.trim(),
+        headApproval: null,
+        revokedFrom: 'pending_hr',
+        updatedAt: Timestamp.now()
+      })
+
+      // Update local arrays
+      const tIdx = teamLeaves.value.findIndex(l => l.id === leaveId)
+      if (tIdx !== -1) {
+        teamLeaves.value[tIdx].status = 'rejected'
+        teamLeaves.value[tIdx].rejectedBy = authStore.user.email
+        teamLeaves.value[tIdx].rejectionReason = reason.trim()
+        teamLeaves.value[tIdx].headApproval = null
+        teamLeaves.value[tIdx].revokedFrom = 'pending_hr'
+      }
+      pendingApprovals.value = pendingApprovals.value.filter(l => l.id !== leaveId)
+      return true
+    } catch (err) {
+      console.error('Error revoking head approval:', err)
+      error.value = err.message
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // HR revokes their approval (approved -> rejected)
+  const hrRevokeApproval = async (leaveId, reason = '') => {
+    const role = authStore.profile.role
+    if (role !== 'hr' && role !== 'super_admin') return false
+
+    try {
+      loading.value = true
+      error.value = null
+      const leaveRef = doc(db, 'leaves', leaveId)
+
+      const leaveSnap = await getDoc(leaveRef)
+      if (leaveSnap.data()?.status !== 'approved') {
+        error.value = 'สถานะใบลาเปลี่ยนไปแล้ว กรุณารีเฟรชข้อมูล'
+        return false
+      }
+
+      await updateDoc(leaveRef, {
+        status: 'rejected',
+        rejectedBy: authStore.user.email,
+        rejectionReason: reason.trim(),
+        hrApproval: null,
+        revokedFrom: 'approved',
+        updatedAt: Timestamp.now()
+      })
+
+      // Update local arrays
+      const tIdx = teamLeaves.value.findIndex(l => l.id === leaveId)
+      if (tIdx !== -1) {
+        teamLeaves.value[tIdx].status = 'rejected'
+        teamLeaves.value[tIdx].rejectedBy = authStore.user.email
+        teamLeaves.value[tIdx].rejectionReason = reason.trim()
+        teamLeaves.value[tIdx].hrApproval = null
+        teamLeaves.value[tIdx].revokedFrom = 'approved'
+      }
+      const mIdx = myLeaves.value.findIndex(l => l.id === leaveId)
+      if (mIdx !== -1) {
+        myLeaves.value[mIdx].status = 'rejected'
+      }
+      return true
+    } catch (err) {
+      console.error('Error revoking HR approval:', err)
       error.value = err.message
       return false
     } finally {
@@ -446,9 +623,9 @@ export const useLeaveStore = defineStore('leave', () => {
       error.value = null
       const docRef = doc(db, 'leaveQuotas', email)
       const payload = {
-        sick: Number(quotaData.sick) ?? 0,
-        personal: Number(quotaData.personal) ?? 0,
-        vacation: Number(quotaData.vacation) ?? 0,
+        sick: Number(quotaData.sick) || 0,
+        personal: Number(quotaData.personal) || 0,
+        vacation: Number(quotaData.vacation) || 0,
         updatedAt: Timestamp.now(),
         updatedBy: authStore.user?.email || ''
       }
@@ -488,16 +665,22 @@ export const useLeaveStore = defineStore('leave', () => {
     }
   }
 
-  // Calculate business days between two dates (inclusive, Mon-Fri only)
+  // Calculate business days between two dates (inclusive, Mon-Fri only, excluding company holidays)
   const calcBusinessDays = (startDate, endDate) => {
     if (!startDate || !endDate) return 0
     const start = new Date(startDate)
     const end = new Date(endDate)
     let count = 0
     const current = new Date(start)
+
+    const holidayStore = useHolidayStore()
+
     while (current <= end) {
       const day = current.getDay()
-      if (day !== 0 && day !== 6) count++ // Skip Sun(0) and Sat(6)
+      const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
+      if (day !== 0 && day !== 6 && !holidayStore.isHoliday(dateStr)) {
+        count++
+      }
       current.setDate(current.getDate() + 1)
     }
     return count
@@ -513,7 +696,10 @@ export const useLeaveStore = defineStore('leave', () => {
         leaveQuota.value = {
           sick: data.sick ?? 30,
           personal: data.personal ?? 10,
-          vacation: data.vacation ?? 6
+          vacation: data.vacation ?? 6,
+          maternity: 90,
+          unpaid: 999,
+          other: 999
         }
         quotaMeta.value = {
           updatedAt: data.updatedAt || null,
@@ -539,7 +725,7 @@ export const useLeaveStore = defineStore('leave', () => {
         updatedBy: authStore.user?.email || ''
       }
       await setDoc(docRef, payload)
-      leaveQuota.value = { sick: payload.sick, personal: payload.personal, vacation: payload.vacation }
+      leaveQuota.value = { sick: payload.sick, personal: payload.personal, vacation: payload.vacation, maternity: 90, unpaid: 999, other: 999 }
       quotaMeta.value = { updatedAt: payload.updatedAt, updatedBy: payload.updatedBy }
       return true
     } catch (err) {
@@ -742,9 +928,12 @@ export const useLeaveStore = defineStore('leave', () => {
     resetUserToGlobalQuota,
     submitLeave,
     cancelLeave,
+    adminCancelLeave,
     headApprove,
     hrApprove,
     rejectLeave,
+    headRevokeApproval,
+    hrRevokeApproval,
     fetchMyLeaves,
     fetchPendingApprovals,
     fetchTeamLeaves,

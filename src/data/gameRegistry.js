@@ -52,7 +52,8 @@ export const games = [
     route: '/games/werewolf',
     difficulty: 'ปานกลาง',
     controls: 'Chat / Vote',
-    available: true
+    available: true,
+    noLeaderboard: true
   },
   {
     id: 'uno',
@@ -66,6 +67,18 @@ export const games = [
     controls: 'Tap / Click',
     available: true,
     noLeaderboard: true
+  },
+  {
+    id: 'vocab-battle',
+    name: 'Vocab Battle',
+    subtitle: 'Thai-English',
+    description: 'จับคู่คำศัพท์ไทย-อังกฤษ! เล่นคนเดียวหรือ Battle Royal สูงสุด 30 คน แบ่งตาม CEFR Level',
+    icon: 'translate',
+    color: '#7c4dff',
+    route: '/games/vocab-battle',
+    difficulty: 'ปานกลาง',
+    controls: 'Tap / Click',
+    available: true
   }
   // เพิ่มเกมใหม่ได้ที่นี่ เช่น:
   // {

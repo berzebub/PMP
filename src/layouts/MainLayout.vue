@@ -245,6 +245,15 @@
             <span class="nav-label">Company Calendar</span>
           </div>
 
+          <!-- Attendance -->
+          <div class="nav-item" :class="{ 'nav-active': currentRoute === '/attendance' }"
+            @click="navigateTo('/attendance')">
+            <div class="nav-icon" style="color: #ab47bc;">
+              <q-icon name="fingerprint" size="20px" />
+            </div>
+            <span class="nav-label">เวลาเข้า-ออก</span>
+          </div>
+
           <!-- Arcade -->
           <div class="nav-item" :class="{ 'nav-active': currentRoute.startsWith('/games') }"
             @click="navigateTo('/games')">
@@ -386,7 +395,7 @@
               <div class="done-answer-card">
                 <div class="done-answer-header">
                   <span class="done-answer-icon">⏪</span>
-                  <span class="done-answer-title">เมื่อวานทำอะไร?</span>
+                  <span class="done-answer-title">{{ yesterdayLabel }}ทำอะไร?</span>
                 </div>
                 <div class="done-answer-text">{{ checkinStore.todayCheckin?.yesterday || checkinStore.todayCheckin?.note || '-' }}</div>
               </div>
@@ -429,10 +438,10 @@
             <div class="done-edit-section">
               <div class="done-edit-field">
                 <div class="done-edit-label">
-                  <span>⏪</span> เมื่อวานทำอะไร?
+                  <span>⏪</span> {{ yesterdayLabel }}ทำอะไร?
                 </div>
                 <textarea v-model="editYesterday" class="checkin-textarea done-edit-textarea"
-                  rows="2" maxlength="500" placeholder="สรุปสิ่งที่ทำเมื่อวาน..."></textarea>
+                  rows="2" maxlength="500" :placeholder="`สรุปสิ่งที่ทำ${yesterdayLabel}...`"></textarea>
               </div>
               <div class="done-edit-field">
                 <div class="done-edit-label">
@@ -486,8 +495,8 @@
           <!-- Step 1: Yesterday -->
           <div v-if="checkinStep === 1" class="wizard-step" key="step1">
             <div class="wizard-question-icon">⏪</div>
-            <div class="wizard-question">เมื่อวานคุณทำอะไรบ้าง?</div>
-            <div class="wizard-hint">สรุปสั้นๆ สิ่งที่ทำเมื่อวาน</div>
+            <div class="wizard-question">{{ yesterdayLabel }}คุณทำอะไรบ้าง?</div>
+            <div class="wizard-hint">สรุปสั้นๆ สิ่งที่ทำ{{ yesterdayLabel }}</div>
             <textarea v-model="checkinYesterday" class="checkin-textarea wizard-textarea"
               placeholder="เช่น แก้บัค login, ประชุม sprint review..."
               rows="3" maxlength="500" ref="textareaStep1"></textarea>
@@ -845,6 +854,10 @@ const passwordSuccess = ref(false)
 const passwordLoading = ref(false)
 const showPasswordForm = ref(false)
 const avatarUploading = ref(false)
+
+// Monday check: ถ้าวันจันทร์ ให้ถามว่า "เมื่อวันศุกร์" แทน "เมื่อวาน"
+const isMonday = computed(() => new Date().getDay() === 1)
+const yesterdayLabel = computed(() => isMonday.value ? 'เมื่อวันศุกร์' : 'เมื่อวาน')
 
 const moodOptions = [
   { emoji: '🔥', label: 'มุ่งมั่น' },

@@ -143,7 +143,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useGameStore } from 'src/stores/game'
 import { useAuthStore } from 'src/stores/auth'
 
@@ -213,6 +213,7 @@ const MAX_GAP_FRAMES = 90
 // Preloaded images
 const obstacleImages = {}
 const playerImages = { run: null, duck: null }
+let profileImage = null
 
 function preloadImages() {
   // Obstacle images
@@ -236,6 +237,29 @@ function preloadImages() {
   const duckImg = new Image()
   duckImg.src = '/images/dino/dino-02.png'
   playerImages.duck = duckImg
+
+  // Profile image loaded reactively via watch below
+  loadProfileImage()
+}
+
+function loadProfileImage() {
+  const photoURL = authStore.profile?.photoURL || authStore.user?.photoURL
+  if (!photoURL) return
+
+  const pImg = new Image()
+  pImg.onload = () => {
+    profileImage = pImg
+  }
+  pImg.onerror = () => {
+    // Retry without crossOrigin if CORS fails
+    const retry = new Image()
+    retry.onload = () => {
+      profileImage = retry
+    }
+    retry.src = photoURL
+  }
+  pImg.crossOrigin = 'anonymous'
+  pImg.src = photoURL
 }
 
 // Obstacle types
@@ -351,6 +375,9 @@ function drawPlayer() {
     const drawY = groundY - drawH - player.y
 
     ctx.drawImage(img, drawX, drawY, drawW, drawH)
+
+    // Draw profile avatar on top of dino's head
+    drawProfileAvatar(drawX, drawY, drawW, player.isDucking)
   } else {
     // Fallback: geometric player
     ctx.fillStyle = '#5c9ce6'
@@ -366,6 +393,9 @@ function drawPlayer() {
       ctx.beginPath()
       ctx.arc(player.x + 22, py + 8, 2.5, 0, Math.PI * 2)
       ctx.fill()
+
+      // Draw profile avatar on fallback duck
+      drawProfileAvatar(player.x - 22, py + 4, 44, true)
     } else {
       ctx.beginPath()
       ctx.arc(player.x, py + 14, 14, 0, Math.PI * 2)
@@ -382,8 +412,39 @@ function drawPlayer() {
       const legOffset = Math.sin(player.legFrame * 0.3) * 6
       ctx.fillRect(player.x - 9, py + 48, 8, 12 + legOffset)
       ctx.fillRect(player.x + 1, py + 48, 8, 12 - legOffset)
+
+      // Draw profile avatar on fallback standing
+      drawProfileAvatar(player.x - 14, py, 28, false)
     }
   }
+}
+
+function drawProfileAvatar(dinoX, dinoY, dinoW, isDucking) {
+  const hasProfile = profileImage && profileImage.complete && profileImage.naturalWidth > 0
+  if (!hasProfile) return
+
+  const avatarSize = isDucking ? 20 : 24
+  const avatarRadius = avatarSize / 2
+
+  // Position: centered above the dino's head
+  const cx = dinoX + dinoW / 2
+  const cy = dinoY - avatarRadius - 3
+
+  ctx.save()
+
+  // White ring border
+  ctx.beginPath()
+  ctx.arc(cx, cy, avatarRadius + 2, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+  ctx.fill()
+
+  // Clip to circle and draw profile image
+  ctx.beginPath()
+  ctx.arc(cx, cy, avatarRadius, 0, Math.PI * 2)
+  ctx.clip()
+  ctx.drawImage(profileImage, cx - avatarRadius, cy - avatarRadius, avatarSize, avatarSize)
+
+  ctx.restore()
 }
 
 function drawObstacles() {
@@ -825,6 +886,15 @@ function handleResize() {
     }
   })
 }
+
+// Watch for profile photo changes to load avatar reactively
+watch(
+  () => authStore.profile?.photoURL || authStore.user?.photoURL,
+  (newURL) => {
+    if (newURL) loadProfileImage()
+  },
+  { immediate: true }
+)
 
 onMounted(async () => {
   preloadImages()

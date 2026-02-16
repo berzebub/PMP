@@ -294,6 +294,20 @@
               </template>
             </div>
 
+            <!-- Holidays in range notice -->
+            <div v-if="holidaysInRange.length > 0 && leaveDays > 0" class="leave-holidays-notice">
+              <div class="leave-holidays-notice-header">
+                <q-icon name="celebration" size="15px" />
+                <span>วันหยุดบริษัทที่ไม่นับเป็นวันลา ({{ holidaysInRange.length }} วัน)</span>
+              </div>
+              <div class="leave-holidays-list">
+                <div v-for="h in holidaysInRange" :key="h.date" class="leave-holiday-chip">
+                  <span class="leave-holiday-chip-date">{{ formatHolidayDateShort(h.date) }}</span>
+                  <span class="leave-holiday-chip-name">{{ h.name }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Details -->
             <div class="leave-field">
               <label class="leave-field-label">
@@ -334,7 +348,17 @@
               <!-- Tabs -->
               <div class="leave-tabs">
                 <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
-                <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'team' }" @click="switchToTeam">ทั้งทีม</button>
+                <button class="leave-tab" :class="{ 'leave-tab-active': historyTab === 'team' }" @click="switchToTeam">ทั้งหมด</button>
+              </div>
+              <div v-if="historyTab === 'my'" class="leave-view-toggle">
+                <button class="leave-view-btn" :class="{ 'leave-view-btn-active': viewMode === 'list' }"
+                  @click="viewMode = 'list'" title="มุมมองรายการ">
+                  <q-icon name="view_list" size="15px" />
+                </button>
+                <button class="leave-view-btn" :class="{ 'leave-view-btn-active': viewMode === 'calendar' }"
+                  @click="viewMode = 'calendar'" title="มุมมองปฏิทิน">
+                  <q-icon name="calendar_month" size="15px" />
+                </button>
               </div>
               <button class="leave-refresh-btn" :disabled="leaveStore.loading" @click="refreshHistory" title="รีเฟรช">
                 <q-icon name="refresh" size="15px" :class="{ 'leave-spin': leaveStore.loading }" />
@@ -349,8 +373,108 @@
             </div>
           </div>
 
-          <!-- My Leaves -->
-          <div v-if="historyTab === 'my'" class="leave-history-list">
+          <!-- My Leaves: Calendar View -->
+          <div v-if="historyTab === 'my' && viewMode === 'calendar'" class="leave-calendar">
+            <!-- Calendar Navigation -->
+            <div class="leave-cal-nav">
+              <button class="leave-cal-nav-btn" @click="prevMonth">
+                <q-icon name="chevron_left" size="20px" />
+              </button>
+              <div class="leave-cal-nav-title">{{ calendarMonthLabel }}</div>
+              <button class="leave-cal-nav-btn" @click="nextMonth">
+                <q-icon name="chevron_right" size="20px" />
+              </button>
+              <button class="leave-cal-today-btn" @click="goToToday">วันนี้</button>
+            </div>
+
+            <!-- Legend -->
+            <div class="leave-cal-legend">
+              <span v-for="t in leaveStore.leaveTypes" :key="t.value" class="leave-cal-legend-item">
+                <span class="leave-cal-legend-dot" :style="{ background: t.color }"></span>
+                <span>{{ t.label }}</span>
+              </span>
+              <span class="leave-cal-legend-item">
+                <span class="leave-cal-legend-dot" style="background: #66bb6a;"></span>
+                <span>วันหยุด</span>
+              </span>
+            </div>
+
+            <!-- Day-of-week header -->
+            <div class="leave-cal-grid leave-cal-header">
+              <div v-for="d in ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.']" :key="d" class="leave-cal-dow"
+                :class="{ 'leave-cal-dow--weekend': d === 'ส.' || d === 'อา.' }">{{ d }}</div>
+            </div>
+
+            <!-- Calendar Grid -->
+            <div class="leave-cal-grid leave-cal-body">
+              <div v-for="(day, idx) in calendarDays" :key="idx"
+                class="leave-cal-day"
+                :class="{
+                  'leave-cal-day--outside': !day.isCurrentMonth,
+                  'leave-cal-day--today': day.isToday,
+                  'leave-cal-day--weekend': day.isWeekend,
+                  'leave-cal-day--has-event': day.leaves.length > 0 || day.holiday,
+                  'leave-cal-day--selected': calendarSelectedDay === day.date
+                }"
+                @click="selectCalendarDay(day)">
+                <div class="leave-cal-day-num">{{ day.day }}</div>
+                <!-- Holiday dot -->
+                <div v-if="day.holiday" class="leave-cal-holiday-dot">
+                  <q-tooltip anchor="top middle" self="bottom middle" :offset="[0, 4]">{{ day.holiday.name }}</q-tooltip>
+                </div>
+                <!-- Leave pills (max 2 shown, then +N) -->
+                <div v-if="day.leaves.length > 0" class="leave-cal-events">
+                  <div v-for="(lv, li) in day.leaves.slice(0, 2)" :key="li"
+                    class="leave-cal-event"
+                    :style="{ background: getLeaveColor(lv.leaveType) + '30', borderLeft: '2px solid ' + getLeaveColor(lv.leaveType) }">
+                    <span class="leave-cal-event-icon">{{ getTypeInfo(lv.leaveType).icon }}</span>
+                  </div>
+                  <div v-if="day.leaves.length > 2" class="leave-cal-event-more">
+                    +{{ day.leaves.length - 2 }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Selected Day Detail -->
+            <div v-if="calendarSelectedDay" class="leave-cal-detail">
+              <div class="leave-cal-detail-header">
+                <q-icon name="event" size="16px" />
+                <span>{{ formatDate(calendarSelectedDay) }}</span>
+                <button class="leave-cal-detail-close" @click="calendarSelectedDay = null">
+                  <q-icon name="close" size="14px" />
+                </button>
+              </div>
+              <!-- Holiday info -->
+              <div v-if="calendarDays.find(d => d.date === calendarSelectedDay)?.holiday" class="leave-cal-detail-holiday">
+                <q-icon name="celebration" size="14px" style="color: #66bb6a;" />
+                <span>{{ calendarDays.find(d => d.date === calendarSelectedDay).holiday.name }}</span>
+              </div>
+              <!-- Leave details -->
+              <div v-for="lv in (calendarDays.find(d => d.date === calendarSelectedDay)?.leaves || [])" :key="lv.id"
+                class="leave-cal-detail-item">
+                <div class="leave-cal-detail-type">
+                  <span>{{ getTypeInfo(lv.leaveType).icon }}</span>
+                  <span>{{ getTypeInfo(lv.leaveType).label }}</span>
+                  <span v-if="lv.durationType && lv.durationType !== 'full_day'" class="leave-duration-badge">
+                    {{ getDurationLabel(lv) }}
+                  </span>
+                </div>
+                <div class="leave-cal-detail-dates">
+                  {{ formatDate(lv.startDate) }}{{ lv.startDate !== lv.endDate ? ' — ' + formatDate(lv.endDate) : '' }}
+                  <span class="leave-cal-detail-days">({{ getDisplayDays(lv) }} วัน)</span>
+                </div>
+                <div class="leave-cal-detail-status"
+                  :style="{ color: getStatusInfo(lv.status).color }">
+                  <q-icon :name="getStatusInfo(lv.status).icon" size="12px" />
+                  <span>{{ getStatusInfo(lv.status).label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- My Leaves: List View -->
+          <div v-if="historyTab === 'my' && viewMode === 'list'" class="leave-history-list">
             <div v-if="leaveStore.myLeaves.length === 0" class="leave-empty">
               <q-icon name="beach_access" size="40px" style="color: #2a2b2e;" />
               <span>ยังไม่มีประวัติการลา</span>
@@ -396,6 +520,10 @@
               <div v-if="leave.status === 'rejected' && leave.rejectionReason" class="leave-rejection-reason">
                 <q-icon name="info" size="12px" />
                 <span>เหตุผล: {{ leave.rejectionReason }}</span>
+              </div>
+              <div v-if="leave.status === 'cancelled' && leave.cancelledBy" class="leave-cancel-trail">
+                <q-icon name="cancel" size="12px" style="color: #ef5350;" />
+                <span>ยกเลิกโดย {{ leave.cancelledByName || leave.cancelledBy }}{{ leave.cancelReason ? ' — ' + leave.cancelReason : '' }}</span>
               </div>
 
               <div class="leave-history-bottom">
@@ -449,14 +577,80 @@
                 {{ leave.details }}
               </div>
 
+              <!-- Approval trail (team view) -->
+              <div v-if="leave.headApproval" class="leave-approval-trail">
+                <q-icon name="check_circle" size="12px" style="color: #66bb6a;" />
+                <span>หัวหน้าอนุมัติ: {{ leave.headApproval.approvedByName }}</span>
+              </div>
+              <div v-if="leave.hrApproval" class="leave-approval-trail">
+                <q-icon name="check_circle" size="12px" style="color: #ce93d8;" />
+                <span>HR อนุมัติ: {{ leave.hrApproval.approvedByName }}</span>
+              </div>
+              <div v-if="leave.status === 'cancelled' && leave.cancelledBy" class="leave-cancel-trail">
+                <q-icon name="cancel" size="12px" style="color: #ef5350;" />
+                <span>ยกเลิกโดย {{ leave.cancelledByName || leave.cancelledBy }}{{ leave.cancelReason ? ' — ' + leave.cancelReason : '' }}</span>
+              </div>
+              <div v-if="leave.status === 'rejected' && leave.rejectionReason" class="leave-rejection-reason">
+                <q-icon name="info" size="12px" />
+                <span>เหตุผล: {{ leave.rejectionReason }}</span>
+              </div>
+
               <div class="leave-history-bottom">
                 <span class="leave-history-submitted">โดย {{ leave.userName }} — {{ formatTimestamp(leave.submittedAt) }}</span>
+                <button v-if="canHeadRevoke(leave)"
+                  class="leave-revoke-btn" @click="openRevokeDialog(leave, 'head')">
+                  <q-icon name="undo" size="13px" />
+                  <span>ถอนอนุมัติ</span>
+                </button>
+                <button v-if="canHrRevoke(leave)"
+                  class="leave-revoke-btn" @click="openRevokeDialog(leave, 'hr')">
+                  <q-icon name="undo" size="13px" />
+                  <span>ถอนอนุมัติ</span>
+                </button>
+                <button v-if="leave.status === 'approved' && canAdminCancel"
+                  class="leave-admin-cancel-btn" @click="openAdminCancelDialog(leave)">
+                  <q-icon name="cancel" size="13px" />
+                  <span>ยกเลิกใบลา</span>
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Admin Cancel Approved Leave Dialog -->
+    <q-dialog v-model="showAdminCancelDialog">
+      <q-card class="reject-dialog-card">
+        <q-card-section class="row items-center q-pb-sm">
+          <q-icon name="cancel" size="22px" style="color: #ef5350;" class="q-mr-sm" />
+          <div class="reject-dialog-title">ยกเลิกใบลาที่อนุมัติแล้ว</div>
+          <q-space />
+          <q-btn icon="close" flat round dense style="color: #6b6c6f;" @click="showAdminCancelDialog = false" />
+        </q-card-section>
+        <q-separator style="background: rgba(44, 58, 69, 0.4);" />
+        <q-card-section>
+          <div v-if="adminCancellingLeave" class="reject-leave-info">
+            <span>{{ adminCancellingLeave.firstName }} {{ adminCancellingLeave.lastName }}</span>
+            <span class="reject-leave-type">{{ getTypeInfo(adminCancellingLeave.leaveType).icon }} {{ getTypeInfo(adminCancellingLeave.leaveType).label }}</span>
+            <span class="reject-leave-dates">{{ formatDate(adminCancellingLeave.startDate) }} — {{ formatDate(adminCancellingLeave.endDate) }}</span>
+            <span class="reject-leave-dates">({{ getDisplayDays(adminCancellingLeave) }} วัน)</span>
+          </div>
+          <div class="admin-cancel-quota-hint">
+            <q-icon name="info" size="14px" />
+            <span>โควต้าการลาจะถูกคืนให้พนักงานอัตโนมัติ</span>
+          </div>
+          <label class="reject-field-label">เหตุผลที่ยกเลิก</label>
+          <textarea v-model="adminCancelReason" class="reject-textarea"
+            placeholder="ระบุเหตุผล (ไม่บังคับ)..." rows="3" maxlength="300"></textarea>
+          <div class="row justify-end q-gutter-sm q-mt-md">
+            <q-btn flat label="ปิด" class="reject-cancel-btn" @click="showAdminCancelDialog = false" />
+            <q-btn label="ยืนยันยกเลิกใบลา" icon="cancel" class="reject-confirm-btn"
+              :loading="leaveStore.loading" @click="handleAdminCancel" />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <!-- Reject Dialog -->
     <q-dialog v-model="showRejectDialog">
@@ -481,6 +675,43 @@
             <q-btn flat label="ยกเลิก" class="reject-cancel-btn" @click="showRejectDialog = false" />
             <q-btn label="ยืนยันไม่อนุมัติ" icon="cancel" class="reject-confirm-btn"
               :loading="leaveStore.loading" @click="handleReject" />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Revoke Approval Dialog -->
+    <q-dialog v-model="showRevokeDialog">
+      <q-card class="reject-dialog-card">
+        <q-card-section class="row items-center q-pb-sm">
+          <q-icon name="undo" size="22px" style="color: #ffb74d;" class="q-mr-sm" />
+          <div class="reject-dialog-title">ถอนอนุมัติใบลา</div>
+          <q-space />
+          <q-btn icon="close" flat round dense style="color: #6b6c6f;" @click="showRevokeDialog = false" />
+        </q-card-section>
+        <q-separator style="background: rgba(44, 58, 69, 0.4);" />
+        <q-card-section>
+          <div v-if="revokingLeave" class="reject-leave-info">
+            <span>{{ revokingLeave.firstName }} {{ revokingLeave.lastName }}</span>
+            <span class="reject-leave-type">{{ getTypeInfo(revokingLeave.leaveType).icon }} {{ getTypeInfo(revokingLeave.leaveType).label }}</span>
+            <span class="reject-leave-dates">{{ formatDate(revokingLeave.startDate) }} — {{ formatDate(revokingLeave.endDate) }}</span>
+            <span class="reject-leave-dates">({{ getDisplayDays(revokingLeave) }} วัน)</span>
+          </div>
+          <div v-if="revokeType === 'hr'" class="admin-cancel-quota-hint">
+            <q-icon name="info" size="14px" />
+            <span>โควต้าการลาจะถูกคืนให้พนักงานอัตโนมัติ</span>
+          </div>
+          <div class="revoke-warning-hint">
+            <q-icon name="warning" size="14px" />
+            <span>การถอนอนุมัติจะเปลี่ยนสถานะเป็น "ไม่อนุมัติ" ทันที</span>
+          </div>
+          <label class="reject-field-label">เหตุผลที่ถอนอนุมัติ</label>
+          <textarea v-model="revokeReason" class="reject-textarea"
+            placeholder="ระบุเหตุผล เช่น กดอนุมัติผิด, ข้อมูลไม่ถูกต้อง..." rows="3" maxlength="300"></textarea>
+          <div class="row justify-end q-gutter-sm q-mt-md">
+            <q-btn flat label="ยกเลิก" class="reject-cancel-btn" @click="showRevokeDialog = false" />
+            <q-btn label="ยืนยันถอนอนุมัติ" icon="undo" class="revoke-confirm-btn"
+              :loading="leaveStore.loading" @click="handleRevoke" />
           </div>
         </q-card-section>
       </q-card>
@@ -636,19 +867,124 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useLeaveStore } from 'stores/leave'
 import { useAuthStore } from 'stores/auth'
 import { useNotificationsStore } from 'stores/notifications'
+import { useHolidayStore } from 'stores/holiday'
 import * as XLSX from 'xlsx'
 
 const leaveStore = useLeaveStore()
 const authStore = useAuthStore()
 const notificationsStore = useNotificationsStore()
+const holidayStore = useHolidayStore()
 
 const historyTab = ref('my')
 const showSuccess = ref(false)
 const formError = ref('')
 const showRejectDialog = ref(false)
+const showAdminCancelDialog = ref(false)
+const adminCancellingLeave = ref(null)
+const adminCancelReason = ref('')
 const rejectingLeave = ref(null)
 const rejectReason = ref('')
 const lastSubmittedType = ref('')
+
+// ====== Calendar View ======
+const viewMode = ref('list') // 'list' | 'calendar'
+const calendarMonth = ref(new Date().getMonth())
+const calendarYear = ref(new Date().getFullYear())
+
+const calendarMonthLabel = computed(() => {
+  const date = new Date(calendarYear.value, calendarMonth.value, 1)
+  return date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
+})
+
+const prevMonth = () => {
+  if (calendarMonth.value === 0) {
+    calendarMonth.value = 11
+    calendarYear.value--
+  } else {
+    calendarMonth.value--
+  }
+}
+
+const nextMonth = () => {
+  if (calendarMonth.value === 11) {
+    calendarMonth.value = 0
+    calendarYear.value++
+  } else {
+    calendarMonth.value++
+  }
+}
+
+const goToToday = () => {
+  const now = new Date()
+  calendarMonth.value = now.getMonth()
+  calendarYear.value = now.getFullYear()
+}
+
+const getLeaveColor = (leaveType) => {
+  const info = leaveStore.leaveTypes.find(t => t.value === leaveType)
+  return info?.color || '#9e9e9e'
+}
+
+// Build calendar grid (42 cells = 6 weeks)
+const calendarDays = computed(() => {
+  const year = calendarYear.value
+  const month = calendarMonth.value
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+
+  // Monday = 0 based start (shift Sunday from 0 to 6)
+  let startDow = firstDay.getDay() - 1
+  if (startDow < 0) startDow = 6
+
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  // Get the first date shown (may be from previous month)
+  const gridStart = new Date(year, month, 1 - startDow)
+
+  // Filter leaves that may overlap this month view
+  const gridStartStr = `${gridStart.getFullYear()}-${String(gridStart.getMonth() + 1).padStart(2, '0')}-${String(gridStart.getDate()).padStart(2, '0')}`
+  const gridEndDate = new Date(year, month, lastDay.getDate() + (41 - startDow - lastDay.getDate() + 1))
+  const gridEndStr = `${gridEndDate.getFullYear()}-${String(gridEndDate.getMonth() + 1).padStart(2, '0')}-${String(gridEndDate.getDate()).padStart(2, '0')}`
+
+  const relevantLeaves = leaveStore.myLeaves.filter(l => {
+    if (l.status === 'rejected' || l.status === 'cancelled') return false
+    if (!l.startDate || !l.endDate) return false
+    return l.startDate <= gridEndStr && l.endDate >= gridStartStr
+  })
+
+  const days = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart)
+    d.setDate(d.getDate() + i)
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const dow = d.getDay()
+
+    // Find leaves that cover this date
+    const dayLeaves = relevantLeaves.filter(l => l.startDate <= dateStr && l.endDate >= dateStr)
+
+    // Find holiday
+    const holidayName = holidayStore.getHolidayName(dateStr)
+
+    days.push({
+      date: dateStr,
+      day: d.getDate(),
+      isCurrentMonth: d.getMonth() === month,
+      isToday: dateStr === todayStr,
+      isWeekend: dow === 0 || dow === 6,
+      holiday: holidayName ? { name: holidayName } : null,
+      leaves: dayLeaves
+    })
+  }
+  return days
+})
+
+const calendarSelectedDay = ref(null)
+
+const selectCalendarDay = (day) => {
+  if (day.leaves.length === 0 && !day.holiday) return
+  calendarSelectedDay.value = calendarSelectedDay.value === day.date ? null : day.date
+}
 
 // Quota management state
 const showQuotaDialog = ref(false)
@@ -823,6 +1159,19 @@ const fillNameFromProfile = () => {
   }
 }
 
+// Watch leave dates to ensure holidays are loaded for the correct year(s)
+watch([() => form.value.startDate, () => form.value.endDate], async ([startDate, endDate]) => {
+  if (!startDate) return
+  const startYear = parseInt(startDate.split('-')[0])
+  const endYear = endDate ? parseInt(endDate.split('-')[0]) : startYear
+
+  if (startYear !== endYear) {
+    await holidayStore.fetchHolidaysMultiYear([startYear, endYear])
+  } else if (holidayStore.loadedYear !== startYear) {
+    await holidayStore.fetchHolidays(startYear)
+  }
+})
+
 // Watch profile changes to fill name when profile finishes loading
 const approvalsFetched = ref(false)
 
@@ -848,7 +1197,8 @@ onMounted(async () => {
   await Promise.all([
     leaveStore.fetchMyLeaves(),
     leaveStore.fetchLeaveQuota(),
-    leaveStore.fetchMyIndividualQuota()
+    leaveStore.fetchMyIndividualQuota(),
+    holidayStore.fetchHolidays(new Date().getFullYear())
   ])
 
   // Initialize quota form from loaded values
@@ -914,6 +1264,21 @@ const leaveCalc = computed(() => {
 
 const leaveDays = computed(() => leaveCalc.value.totalDays)
 const leaveHours = computed(() => leaveCalc.value.totalHours)
+
+// Computed: holidays that fall within the selected leave date range
+const holidaysInRange = computed(() => {
+  if (!form.value.startDate) return []
+  const effectiveEnd = isPartialDay.value ? form.value.startDate : (form.value.endDate || form.value.startDate)
+  return holidayStore.getHolidaysInRange(form.value.startDate, effectiveEnd)
+})
+
+// Format a holiday date for display (short)
+const formatHolidayDateShort = (dateStr) => {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+}
 
 // Computed: form valid
 const isFormValid = computed(() => {
@@ -1055,7 +1420,7 @@ const exportToExcel = () => {
   ws['!cols'] = colWidths
 
   const wb = XLSX.utils.book_new()
-  const sheetName = historyTab.value === 'my' ? 'ประวัติการลาของฉัน' : 'ประวัติการลาทั้งทีม'
+  const sheetName = historyTab.value === 'my' ? 'ประวัติการลาของฉัน' : 'ประวัติการลาทั้งหมด'
   XLSX.utils.book_append_sheet(wb, ws, sheetName)
 
   const today = new Date().toISOString().slice(0, 10)
@@ -1119,6 +1484,7 @@ const handleSubmit = async () => {
       const dept = authStore.profile.department
       const userRole = authStore.profile.role
 
+      const currentUserEmail = authStore.user?.email
       let recipients = []
       if (userRole === 'head' || userRole === 'super_admin' || authStore.profile.skipHeadApproval) {
         // Head/super_admin/skipHeadApproval skip head approval → notify HR + super_admin
@@ -1129,6 +1495,8 @@ const handleSubmit = async () => {
           (p.role === 'head' && p.department === dept) || p.role === 'super_admin'
         )
       }
+      // Exclude self from recipients to avoid self-notification
+      recipients = recipients.filter(r => (r.email || r.id) !== currentUserEmail)
 
       for (const r of recipients) {
         await notificationsStore.createNotification({
@@ -1160,7 +1528,103 @@ const resetForm = () => {
 }
 
 const handleCancel = async (id) => {
-  await leaveStore.cancelLeave(id)
+  const success = await leaveStore.cancelLeave(id)
+  if (!success && leaveStore.error) {
+    formError.value = leaveStore.error
+    await leaveStore.fetchMyLeaves()
+  }
+}
+
+// Admin cancel (HR / super_admin)
+const canAdminCancel = computed(() => {
+  const role = authStore.profile.role
+  return role === 'hr' || role === 'super_admin'
+})
+
+const openAdminCancelDialog = (leave) => {
+  adminCancellingLeave.value = leave
+  adminCancelReason.value = ''
+  showAdminCancelDialog.value = true
+}
+
+const handleAdminCancel = async () => {
+  if (!adminCancellingLeave.value) return
+  const success = await leaveStore.adminCancelLeave(adminCancellingLeave.value.id, adminCancelReason.value)
+  if (success) {
+    // Notify the employee
+    await notificationsStore.createNotification({
+      recipientEmail: adminCancellingLeave.value.userId,
+      type: 'leave_cancelled',
+      title: 'ใบลาถูกยกเลิก',
+      message: `ใบลา${getTypeInfo(adminCancellingLeave.value.leaveType).label}ของคุณ (${formatDate(adminCancellingLeave.value.startDate)}${adminCancellingLeave.value.startDate !== adminCancellingLeave.value.endDate ? ' — ' + formatDate(adminCancellingLeave.value.endDate) : ''}) ถูกยกเลิกโดย ${authStore.fullName}${adminCancelReason.value ? ' เหตุผล: ' + adminCancelReason.value : ''} — โควต้าได้คืนแล้ว`
+    })
+
+    showAdminCancelDialog.value = false
+    adminCancellingLeave.value = null
+    adminCancelReason.value = ''
+
+    // Refresh data
+    await leaveStore.fetchTeamLeaves()
+  }
+}
+
+// ====== Revoke Approval ======
+const showRevokeDialog = ref(false)
+const revokingLeave = ref(null)
+const revokeReason = ref('')
+const revokeType = ref('') // 'head' or 'hr'
+
+// Can head/hr/super_admin revoke head approval on this leave?
+const canHeadRevoke = (leave) => {
+  const role = authStore.profile.role
+  if (role !== 'head' && role !== 'hr' && role !== 'super_admin') return false
+  if (leave.status !== 'pending_hr') return false
+  return !!leave.headApproval
+}
+
+// Can HR/super_admin revoke HR approval on this leave?
+const canHrRevoke = (leave) => {
+  const role = authStore.profile.role
+  if (role !== 'hr' && role !== 'super_admin') return false
+  if (leave.status !== 'approved') return false
+  return !!leave.hrApproval
+}
+
+const openRevokeDialog = (leave, type) => {
+  revokingLeave.value = leave
+  revokeReason.value = ''
+  revokeType.value = type
+  showRevokeDialog.value = true
+}
+
+const handleRevoke = async () => {
+  if (!revokingLeave.value) return
+  let success = false
+
+  if (revokeType.value === 'head') {
+    success = await leaveStore.headRevokeApproval(revokingLeave.value.id, revokeReason.value)
+  } else if (revokeType.value === 'hr') {
+    success = await leaveStore.hrRevokeApproval(revokingLeave.value.id, revokeReason.value)
+  }
+
+  if (success) {
+    const leave = revokingLeave.value
+    const revokerRole = revokeType.value === 'head' ? 'หัวหน้า' : 'HR'
+    await notificationsStore.createNotification({
+      recipientEmail: leave.userId,
+      type: 'leave_rejected',
+      title: 'การอนุมัติใบลาถูกถอน',
+      message: `ใบลา${getTypeInfo(leave.leaveType).label}ของคุณ (${formatDate(leave.startDate)}${leave.startDate !== leave.endDate ? ' — ' + formatDate(leave.endDate) : ''}) ถูกถอนอนุมัติโดย${revokerRole} ${authStore.fullName}${revokeReason.value ? ' เหตุผล: ' + revokeReason.value : ''}`
+    })
+
+    showRevokeDialog.value = false
+    revokingLeave.value = null
+    revokeReason.value = ''
+    revokeType.value = ''
+
+    await leaveStore.fetchTeamLeaves()
+    await leaveStore.fetchMyLeaves()
+  }
 }
 
 const refreshApprovals = async () => {
@@ -1191,12 +1655,23 @@ const handleApprove = async (leave) => {
     // Head step: pending_head -> pending_hr (super_admin also approves as head role)
     success = await leaveStore.headApprove(leave.id)
     if (success) {
+      // แจ้งพนักงานเจ้าของใบลา
       await notificationsStore.createNotification({
         recipientEmail: leave.userId,
         type: 'leave_approved',
         title: 'หัวหน้าอนุมัติใบลา',
         message: `ใบลา${getTypeInfo(leave.leaveType).label}ของคุณได้รับการอนุมัติจากหัวหน้าแล้ว รอ HR อนุมัติ`
       })
+      // แจ้ง HR ว่ามีใบลาใหม่รออนุมัติ
+      const hrRecipients = authStore.allProfiles.filter(p => p.role === 'hr')
+      for (const hr of hrRecipients) {
+        await notificationsStore.createNotification({
+          recipientEmail: hr.email || hr.id,
+          type: 'leave_submitted',
+          title: 'มีใบลารอ HR อนุมัติ',
+          message: `ใบลา${getTypeInfo(leave.leaveType).label}ของ ${leave.firstName} ${leave.lastName} ผ่านการอนุมัติจากหัวหน้าแล้ว รอ HR อนุมัติ`
+        })
+      }
     }
   } else if (leave.status === 'pending_hr' && role === 'hr') {
     // Final step: only HR can do final approval
@@ -1811,6 +2286,50 @@ const handleReject = async () => {
   margin-left: 4px;
 }
 
+/* ====== Holidays Notice ====== */
+.leave-holidays-notice {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(102, 187, 106, 0.08);
+  border: 1px solid rgba(102, 187, 106, 0.18);
+  margin-bottom: 14px;
+}
+
+.leave-holidays-notice-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #66bb6a;
+  margin-bottom: 8px;
+}
+
+.leave-holidays-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.leave-holiday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(102, 187, 106, 0.12);
+  font-size: 0.72rem;
+}
+
+.leave-holiday-chip-date {
+  font-weight: 700;
+  color: #66bb6a;
+}
+
+.leave-holiday-chip-name {
+  color: #9ca3af;
+}
+
 /* ====== Textarea ====== */
 .leave-textarea {
   width: 100%;
@@ -2087,6 +2606,69 @@ const handleReject = async () => {
   border-color: rgba(239, 83, 80, 0.4);
 }
 
+.leave-admin-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 83, 80, 0.25);
+  background: rgba(239, 83, 80, 0.06);
+  color: #ef5350;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-admin-cancel-btn:hover {
+  background: rgba(239, 83, 80, 0.14);
+  border-color: rgba(239, 83, 80, 0.45);
+}
+
+.leave-revoke-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 183, 77, 0.25);
+  background: rgba(255, 183, 77, 0.06);
+  color: #ffb74d;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.leave-revoke-btn:hover {
+  background: rgba(255, 183, 77, 0.14);
+  border-color: rgba(255, 183, 77, 0.45);
+}
+
+.leave-cancel-trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: #ef5350;
+  margin-top: 4px;
+}
+
+.admin-cancel-quota-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(66, 165, 245, 0.06);
+  border: 1px solid rgba(66, 165, 245, 0.12);
+  font-size: 0.75rem;
+  color: #42a5f5;
+  margin-bottom: 12px;
+}
+
 /* ====== Approval Section ====== */
 .leave-approval-card {
   margin-bottom: 20px;
@@ -2342,6 +2924,365 @@ const handleReject = async () => {
   font-weight: 600;
   font-size: 0.82rem;
   border-radius: 8px;
+}
+
+.revoke-confirm-btn {
+  background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%) !important;
+  color: #1a1a1a !important;
+  font-weight: 700;
+  font-size: 0.82rem;
+  border-radius: 8px;
+}
+
+.revoke-warning-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 183, 77, 0.08);
+  border: 1px solid rgba(255, 183, 77, 0.15);
+  font-size: 0.75rem;
+  color: #ffb74d;
+  margin-bottom: 12px;
+}
+
+/* ====== View Toggle ====== */
+.leave-view-toggle {
+  display: flex;
+  background: rgba(30, 33, 36, 0.6);
+  border-radius: 6px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  overflow: hidden;
+}
+
+.leave-view-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: #6b6c6f;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-view-btn:hover {
+  color: #9ca3af;
+}
+
+.leave-view-btn-active {
+  background: rgba(92, 156, 230, 0.15);
+  color: #5c9ce6;
+}
+
+/* ====== Calendar View ====== */
+.leave-calendar {
+  padding: 16px;
+}
+
+.leave-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.leave-cal-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-cal-nav-btn:hover {
+  background: rgba(58, 59, 62, 0.3);
+  color: #e1e2e5;
+}
+
+.leave-cal-nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #e1e2e5;
+}
+
+.leave-cal-today-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(92, 156, 230, 0.3);
+  background: transparent;
+  color: #5c9ce6;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.leave-cal-today-btn:hover {
+  background: rgba(92, 156, 230, 0.1);
+}
+
+/* Legend */
+.leave-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: rgba(30, 33, 36, 0.4);
+  border-radius: 8px;
+}
+
+.leave-cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.65rem;
+  color: #9ca3af;
+}
+
+.leave-cal-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Grid */
+.leave-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.leave-cal-header {
+  margin-bottom: 2px;
+}
+
+.leave-cal-dow {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #6b6c6f;
+  padding: 6px 0;
+}
+
+.leave-cal-dow--weekend {
+  color: #4b5563;
+}
+
+/* Day cells */
+.leave-cal-body {
+  gap: 2px;
+}
+
+.leave-cal-day {
+  min-height: 52px;
+  padding: 3px;
+  border-radius: 6px;
+  background: rgba(30, 33, 36, 0.3);
+  cursor: default;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.leave-cal-day--has-event {
+  cursor: pointer;
+}
+
+.leave-cal-day--has-event:hover {
+  background: rgba(58, 59, 62, 0.3);
+}
+
+.leave-cal-day--outside {
+  opacity: 0.3;
+}
+
+.leave-cal-day--today {
+  outline: 1.5px solid rgba(92, 156, 230, 0.6);
+  outline-offset: -1.5px;
+  background: rgba(92, 156, 230, 0.06);
+}
+
+.leave-cal-day--weekend {
+  background: rgba(22, 24, 26, 0.4);
+}
+
+.leave-cal-day--selected {
+  outline: 1.5px solid rgba(255, 183, 77, 0.6);
+  outline-offset: -1.5px;
+  background: rgba(255, 183, 77, 0.06);
+}
+
+.leave-cal-day-num {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #9ca3af;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.leave-cal-day--today .leave-cal-day-num {
+  color: #5c9ce6;
+  font-weight: 800;
+}
+
+.leave-cal-day--outside .leave-cal-day-num {
+  color: #4b5563;
+}
+
+/* Holiday dot */
+.leave-cal-holiday-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #66bb6a;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+/* Leave event pills */
+.leave-cal-events {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-height: 0;
+}
+
+.leave-cal-event {
+  display: flex;
+  align-items: center;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: 0.6rem;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.leave-cal-event-icon {
+  font-size: 0.55rem;
+  line-height: 1;
+}
+
+.leave-cal-event-more {
+  font-size: 0.55rem;
+  color: #6b6c6f;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* Selected Day Detail Panel */
+.leave-cal-detail {
+  margin-top: 12px;
+  padding: 14px;
+  background: rgba(30, 33, 36, 0.6);
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  border-radius: 10px;
+}
+
+.leave-cal-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e1e2e5;
+  margin-bottom: 10px;
+}
+
+.leave-cal-detail-close {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6b6c6f;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.leave-cal-detail-close:hover {
+  background: rgba(58, 59, 62, 0.3);
+  color: #9ca3af;
+}
+
+.leave-cal-detail-holiday {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(102, 187, 106, 0.08);
+  border: 1px solid rgba(102, 187, 106, 0.15);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #66bb6a;
+  margin-bottom: 8px;
+}
+
+.leave-cal-detail-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(22, 24, 26, 0.4);
+  border: 1px solid rgba(58, 59, 62, 0.2);
+  margin-bottom: 6px;
+}
+
+.leave-cal-detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.leave-cal-detail-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e1e2e5;
+  margin-bottom: 4px;
+}
+
+.leave-cal-detail-dates {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.leave-cal-detail-days {
+  color: #6b6c6f;
+}
+
+.leave-cal-detail-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .leave-cal-day { min-height: 42px; }
+  .leave-cal-legend { gap: 6px; }
+  .leave-cal-event-icon { font-size: 0.5rem; }
 }
 
 /* ====== Duration Type Selector ====== */

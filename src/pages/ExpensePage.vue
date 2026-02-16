@@ -23,8 +23,8 @@
           <q-badge v-if="expenseStore.pendingActionCount > 0"
             :label="expenseStore.pendingActionCount + ' รายการ'" class="exp-pending-badge" />
           <div style="flex:1"></div>
-          <button class="exp-refresh-btn" :disabled="expenseStore.loading" @click="refreshPending" title="รีเฟรช">
-            <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.loading }" />
+          <button class="exp-refresh-btn" :disabled="expenseStore.fetching" @click="refreshPending" title="รีเฟรช">
+            <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.fetching }" />
           </button>
         </div>
 
@@ -198,10 +198,10 @@
             </div>
 
             <!-- Submit -->
-            <button class="exp-submit-btn" :disabled="expenseStore.loading || !isFormValid" @click="handleSubmit">
-              <q-spinner v-if="expenseStore.loading" size="18px" color="white" class="q-mr-sm" />
+            <button class="exp-submit-btn" :disabled="expenseStore.submitting || !isFormValid" @click="handleSubmit">
+              <q-spinner v-if="expenseStore.submitting" size="18px" color="white" class="q-mr-sm" />
               <q-icon v-else name="send" size="18px" class="q-mr-sm" />
-              <span>{{ expenseStore.loading ? 'กำลังส่ง...' : 'ส่งใบเบิก' }}</span>
+              <span>{{ expenseStore.submitting ? 'กำลังส่ง...' : 'ส่งใบเบิก' }}</span>
             </button>
           </div>
         </div>
@@ -220,8 +220,8 @@
                 <button class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'my' }" @click="historyTab = 'my'">ของฉัน</button>
                 <button v-if="showManageSection" class="exp-tab" :class="{ 'exp-tab-active': historyTab === 'all' }" @click="switchToAll">ทั้งหมด</button>
               </div>
-              <button class="exp-refresh-btn" :disabled="expenseStore.loading" @click="refreshHistory" title="รีเฟรช">
-                <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.loading }" />
+              <button class="exp-refresh-btn" :disabled="expenseStore.fetching" @click="refreshHistory" title="รีเฟรช">
+                <q-icon name="refresh" size="15px" :class="{ 'exp-spin': expenseStore.fetching }" />
               </button>
               <button class="exp-export-btn"
                 :disabled="currentHistoryList.length === 0"
@@ -264,7 +264,7 @@
                 <span class="exp-history-amount">{{ formatMoney(exp.totalAmount) }} ฿</span>
                 <span class="exp-history-date">{{ formatTimestamp(exp.submittedAt) }}</span>
                 <button v-if="historyTab === 'my' && exp.status === 'pending_hr'"
-                  class="exp-cancel-btn" @click.stop="handleCancel(exp.id)">
+                  class="exp-cancel-btn" @click.stop="openCancelConfirm(exp.id)">
                   <q-icon name="close" size="13px" />
                   <span>ยกเลิก</span>
                 </button>
@@ -376,7 +376,7 @@
           <textarea v-model="rejectReason" class="exp-textarea" placeholder="ระบุเหตุผล..." rows="3"></textarea>
           <div class="row justify-end q-mt-md q-gutter-sm">
             <q-btn flat label="ยกเลิก" style="color: #6b6c6f;" @click="showRejectDialog = false" />
-            <q-btn label="ยืนยันไม่อนุมัติ" class="exp-btn-confirm-reject" :loading="expenseStore.loading"
+            <q-btn label="ยืนยันไม่อนุมัติ" class="exp-btn-confirm-reject" :loading="expenseStore.processing"
               @click="handleReject" />
           </div>
         </q-card-section>
@@ -431,7 +431,7 @@
 
           <div class="row justify-end q-mt-md q-gutter-sm">
             <q-btn flat label="ยกเลิก" style="color: #6b6c6f;" @click="showPayDialog = false" />
-            <q-btn label="ยืนยันจ่ายเงิน" class="exp-btn-confirm-pay" :loading="expenseStore.loading"
+            <q-btn label="ยืนยันจ่ายเงิน" class="exp-btn-confirm-pay" :loading="expenseStore.processing"
               :disable="!payMethod" @click="handlePay" />
           </div>
         </q-card-section>
@@ -459,8 +459,32 @@
           </div>
           <div class="row justify-end q-mt-md q-gutter-sm">
             <q-btn flat label="ยกเลิก" style="color: #6b6c6f;" @click="showCEOConfirm = false" />
-            <q-btn label="ยืนยัน" class="exp-btn-confirm-approve" :loading="expenseStore.loading"
+            <q-btn label="ยืนยัน" class="exp-btn-confirm-approve" :loading="expenseStore.processing"
               @click="confirmCEOApprove" />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
+    <!-- Cancel Confirm Dialog -->
+    <q-dialog v-model="showCancelConfirm">
+      <q-card class="exp-confirm-dialog">
+        <q-card-section class="row items-center q-pb-sm">
+          <q-icon name="cancel" size="22px" style="color: #ef5350;" class="q-mr-sm" />
+          <div class="exp-detail-title">ยืนยันยกเลิกใบเบิก</div>
+          <q-space />
+          <q-btn icon="close" flat round dense style="color: #6b6c6f;" @click="showCancelConfirm = false" />
+        </q-card-section>
+        <q-separator style="background: rgba(44, 58, 69, 0.4);" />
+        <q-card-section>
+          <div class="exp-confirm-msg">
+            <q-icon name="warning" size="16px" style="color: #ffb74d;" />
+            <span>คุณต้องการยกเลิกใบเบิกนี้หรือไม่? การยกเลิกไม่สามารถย้อนกลับได้</span>
+          </div>
+          <div class="row justify-end q-mt-md q-gutter-sm">
+            <q-btn flat label="ไม่ใช่" style="color: #6b6c6f;" @click="showCancelConfirm = false" />
+            <q-btn label="ยืนยันยกเลิก" class="exp-btn-confirm-reject" :loading="expenseStore.processing"
+              @click="confirmCancel" />
           </div>
         </q-card-section>
       </q-card>
@@ -566,6 +590,8 @@ const payNote = ref('')
 const printData = ref(null)
 const showCEOConfirm = ref(false)
 const confirmingExpense = ref(null)
+const showCancelConfirm = ref(false)
+const cancellingExpenseId = ref(null)
 
 // Show manage section for HR / super_admin
 const showManageSection = computed(() => {
@@ -613,8 +639,16 @@ const addItem = () => {
 
 const removeItem = (idx) => {
   formItems.value.splice(idx, 1)
-  // Clean up receipt file for removed item
-  delete receiptFiles.value[idx + 1]
+  // Re-index receipt files to match new item positions
+  const oldFiles = { ...receiptFiles.value }
+  const newFiles = {}
+  for (let i = 0; i < formItems.value.length; i++) {
+    const oldSeq = i < idx ? i + 1 : i + 2
+    if (oldFiles[oldSeq]) {
+      newFiles[i + 1] = oldFiles[oldSeq]
+    }
+  }
+  receiptFiles.value = newFiles
 }
 
 const handleReceipt = (event, seq) => {
@@ -646,17 +680,22 @@ const handleSubmit = async () => {
   if (result) {
     showSuccess.value = true
 
-    // Notify HR users
-    if (authStore.allProfiles.length > 0) {
-      const hrUsers = authStore.allProfiles.filter(p => p.role === 'hr')
-      for (const hr of hrUsers) {
+    // Notify HR / super_admin users
+    try {
+      if (authStore.allProfiles.length === 0) {
+        await authStore.fetchAllProfiles()
+      }
+      const managers = authStore.allProfiles.filter(p => p.role === 'hr' || p.role === 'super_admin')
+      for (const mgr of managers) {
         await notificationsStore.createNotification({
-          recipientEmail: hr.email || hr.id,
+          recipientEmail: mgr.email || mgr.id,
           type: 'expense_submitted',
           title: 'มีใบเบิกค่าใช้จ่ายใหม่',
           message: `${authStore.fullName} ส่งใบเบิกค่าใช้จ่าย ${formatMoney(totalAmount.value)} บาท`
         })
       }
+    } catch (e) {
+      console.error('Error sending expense notification:', e)
     }
   } else {
     formError.value = 'เกิดข้อผิดพลาด กรุณาลองใหม่'
@@ -672,8 +711,16 @@ const resetForm = () => {
 }
 
 // Cancel
-const handleCancel = async (id) => {
-  await expenseStore.cancelExpense(id)
+const openCancelConfirm = (id) => {
+  cancellingExpenseId.value = id
+  showCancelConfirm.value = true
+}
+
+const confirmCancel = async () => {
+  if (!cancellingExpenseId.value) return
+  await expenseStore.cancelExpense(cancellingExpenseId.value)
+  showCancelConfirm.value = false
+  cancellingExpenseId.value = null
 }
 
 // History tabs
@@ -694,9 +741,7 @@ const refreshHistory = async () => {
 
 const switchToAll = async () => {
   historyTab.value = 'all'
-  if (expenseStore.allExpenses.length === 0) {
-    await expenseStore.fetchAllExpenses()
-  }
+  await expenseStore.fetchAllExpenses()
 }
 
 // Detail dialog
@@ -716,15 +761,18 @@ const handleReject = async () => {
   if (!rejectingExpense.value) return
   const success = await expenseStore.rejectExpense(rejectingExpense.value.id, rejectReason.value)
   if (success) {
-    await notificationsStore.createNotification({
-      recipientEmail: rejectingExpense.value.userId,
-      type: 'expense_rejected',
-      title: 'ใบเบิกค่าใช้จ่ายไม่อนุมัติ',
-      message: `ใบเบิก ${formatMoney(rejectingExpense.value.totalAmount)} บาท ไม่ได้รับการอนุมัติ${rejectReason.value ? ' — ' + rejectReason.value : ''}`
-    })
+    try {
+      await notificationsStore.createNotification({
+        recipientEmail: rejectingExpense.value.userId,
+        type: 'expense_rejected',
+        title: 'ใบเบิกค่าใช้จ่ายไม่อนุมัติ',
+        message: `ใบเบิก ${formatMoney(rejectingExpense.value.totalAmount)} บาท ไม่ได้รับการอนุมัติ${rejectReason.value ? ' — ' + rejectReason.value : ''}`
+      })
+    } catch (e) {
+      console.error('Error sending reject notification:', e)
+    }
     showRejectDialog.value = false
 
-    // Auto re-fetch history to keep data up-to-date
     await expenseStore.fetchMyExpenses()
     if (expenseStore.allExpenses.length > 0) {
       await expenseStore.fetchAllExpenses()
@@ -801,14 +849,17 @@ const confirmCEOApprove = async () => {
 const handleCEOApprove = async (exp) => {
   const success = await expenseStore.markCEOApproved(exp.id)
   if (success) {
-    await notificationsStore.createNotification({
-      recipientEmail: exp.userId,
-      type: 'expense_approved',
-      title: 'CEO อนุมัติใบเบิกค่าใช้จ่ายแล้ว',
-      message: `ใบเบิก ${formatMoney(exp.totalAmount)} บาท ได้รับการอนุมัติจาก CEO แล้ว รอ HR จ่ายเงิน`
-    })
+    try {
+      await notificationsStore.createNotification({
+        recipientEmail: exp.userId,
+        type: 'expense_approved',
+        title: 'CEO อนุมัติใบเบิกค่าใช้จ่ายแล้ว',
+        message: `ใบเบิก ${formatMoney(exp.totalAmount)} บาท ได้รับการอนุมัติจาก CEO แล้ว รอ HR จ่ายเงิน`
+      })
+    } catch (e) {
+      console.error('Error sending approve notification:', e)
+    }
 
-    // Auto re-fetch history to keep data up-to-date
     await expenseStore.fetchMyExpenses()
     if (expenseStore.allExpenses.length > 0) {
       await expenseStore.fetchAllExpenses()
@@ -844,15 +895,18 @@ const handlePay = async () => {
     note: payNote.value
   })
   if (success) {
-    await notificationsStore.createNotification({
-      recipientEmail: payingExpense.value.userId,
-      type: 'expense_paid',
-      title: 'จ่ายเงินเบิกค่าใช้จ่ายแล้ว',
-      message: `ใบเบิก ${formatMoney(payingExpense.value.totalAmount)} บาท ได้รับการจ่ายเงินแล้ว (${payMethod.value === 'transfer' ? 'โอนเงิน' : 'เงินสด'})`
-    })
+    try {
+      await notificationsStore.createNotification({
+        recipientEmail: payingExpense.value.userId,
+        type: 'expense_paid',
+        title: 'จ่ายเงินเบิกค่าใช้จ่ายแล้ว',
+        message: `ใบเบิก ${formatMoney(payingExpense.value.totalAmount)} บาท ได้รับการจ่ายเงินแล้ว (${payMethod.value === 'transfer' ? 'โอนเงิน' : 'เงินสด'})`
+      })
+    } catch (e) {
+      console.error('Error sending payment notification:', e)
+    }
     showPayDialog.value = false
 
-    // Auto re-fetch history to keep data up-to-date
     await expenseStore.fetchMyExpenses()
     if (expenseStore.allExpenses.length > 0) {
       await expenseStore.fetchAllExpenses()
@@ -886,6 +940,8 @@ const exportToExcel = () => {
       })
     })
   })
+
+  if (rows.length === 0) return
 
   const ws = XLSX.utils.json_to_sheet(rows)
   const colWidths = Object.keys(rows[0]).map(key => {
