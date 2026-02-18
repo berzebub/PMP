@@ -18,8 +18,9 @@
             <span class="checkin-label">
               {{ checkinStore.hasCheckedInToday ? 'เช็คชื่อแล้ว' : 'เช็คชื่อวันนี้' }}
             </span>
-            <span v-if="checkinStore.currentStreak > 0" class="checkin-streak">
-              {{ checkinStore.streakTier.emoji }} {{ checkinStore.currentStreak }}
+            <span v-if="checkinStore.currentStreak > 0" class="checkin-streak"
+              :class="`streak-tier-${checkinStore.streakTier.tier}`">
+              <span class="streak-fire-icon">🔥</span> {{ checkinStore.currentStreak }}
             </span>
           </button>
 
@@ -56,11 +57,12 @@
                     class="notif-item" :class="{ 'notif-unread': !notif.read }"
                     @click="handleNotifClick(notif)">
                     <div class="notif-icon-wrap" :class="'notif-icon-' + (notif.type === 'admin_broadcast' ? 'broadcast' : notif.type)">
-                      <q-icon :name="notif.type === 'mention' ? 'alternate_email' : notif.type === 'assign' ? 'person_add' : notif.type === 'admin_broadcast' ? 'campaign' : ['expense_submitted','expense_rejected','expense_approved','expense_paid'].includes(notif.type) ? 'receipt_long' : ['leave_submitted','leave_approved','leave_rejected'].includes(notif.type) ? 'event_available' : 'info'" size="18px" />
+                      <q-icon :name="notif.type === 'mention' ? 'alternate_email' : notif.type === 'assign' ? 'person_add' : notif.type === 'admin_broadcast' ? 'campaign' : ['expense_submitted','expense_rejected','expense_approved','expense_paid'].includes(notif.type) ? 'receipt_long' : ['leave_submitted','leave_approved','leave_rejected'].includes(notif.type) ? 'event_available' : ['meeting_invite','meeting_cancelled'].includes(notif.type) ? 'meeting_room' : 'info'" size="18px" />
                     </div>
                     <div class="notif-content">
                       <div v-if="notif.type === 'admin_broadcast' && notif.title" class="notif-broadcast-title">{{ notif.title }}</div>
                       <div class="notif-msg">{{ notif.message }}</div>
+                      <img v-if="notif.imageURL" :src="notif.imageURL" class="notif-broadcast-img" @click.stop="notifLightboxURL = notif.imageURL" />
                       <div class="notif-meta">
                         <span v-if="notif.type === 'admin_broadcast'" class="notif-broadcast-badge">ประกาศ</span>
                         <span v-if="notif.projectName" class="notif-project">{{ notif.projectName }}</span>
@@ -88,6 +90,12 @@
                   </button>
                 </div>
               </div>
+            </div>
+            <div v-if="notifLightboxURL" class="notif-lightbox" @click="notifLightboxURL = null">
+              <img :src="notifLightboxURL" class="notif-lightbox-img" @click.stop />
+              <button class="notif-lightbox-close" @click="notifLightboxURL = null">
+                <q-icon name="close" size="24px" />
+              </button>
             </div>
           </Teleport>
 
@@ -245,6 +253,15 @@
             <span class="nav-label">Company Calendar</span>
           </div>
 
+          <!-- Meeting Room Booking -->
+          <div class="nav-item" :class="{ 'nav-active': currentRoute === '/meeting-room' }"
+            @click="navigateTo('/meeting-room')">
+            <div class="nav-icon" style="color: #26c6da;">
+              <q-icon name="meeting_room" size="20px" />
+            </div>
+            <span class="nav-label">จองห้องประชุม</span>
+          </div>
+
           <!-- Attendance -->
           <div class="nav-item" :class="{ 'nav-active': currentRoute === '/attendance' }"
             @click="navigateTo('/attendance')">
@@ -275,6 +292,13 @@
                 <q-icon name="assessment" size="20px" />
               </div>
               <span class="nav-label">Leave Report</span>
+            </div>
+            <div class="nav-item" :class="{ 'nav-active': currentRoute === '/expense-report' }"
+              @click="navigateTo('/expense-report')">
+              <div class="nav-icon" style="color: #66bb6a;">
+                <q-icon name="receipt_long" size="20px" />
+              </div>
+              <span class="nav-label">Expense Report</span>
             </div>
             <div v-if="authStore.isSuperAdmin || authStore.isHR"
               class="nav-item" :class="{ 'nav-active': currentRoute === '/admin' }"
@@ -316,7 +340,9 @@
         <!-- Header -->
         <div class="checkin-dialog-header">
           <div class="checkin-dialog-icon-wrap">
-            <span v-if="checkinStore.hasCheckedInToday || showCelebration" style="font-size: 1.4rem;">{{ checkinStore.streakTier.emoji || '✅' }}</span>
+            <span v-if="checkinStore.hasCheckedInToday || showCelebration"
+              class="checkin-dialog-icon-emoji streak-fire-icon"
+              :class="`streak-tier-${checkinStore.streakTier.tier}`">{{ checkinStore.streakTier.emoji || '✅' }}</span>
             <q-icon v-else name="event_available" size="28px" />
           </div>
           <div>
@@ -342,8 +368,9 @@
           <div class="celebration-emoji">🎉</div>
           <div class="celebration-title">เช็คชื่อสำเร็จ!</div>
           <div class="celebration-streak" v-if="checkinStore.currentStreak > 0">
-            <span class="streak-fire">{{ checkinStore.streakTier.emoji }}</span>
+            <span class="streak-fire streak-fire-icon" :class="`streak-tier-${checkinStore.streakTier.tier}`">🔥</span>
             <span class="streak-count">{{ checkinStore.currentStreak }} วัน Streak</span>
+            <span class="streak-tier-label">{{ checkinStore.streakTier.label }}</span>
           </div>
           <div class="celebration-level">
             <span>{{ checkinStore.currentLevel.icon }}</span>
@@ -366,10 +393,11 @@
           <!-- Streak + Level summary -->
           <div class="done-summary-row">
             <div class="done-summary-item">
-              <span class="done-summary-emoji">{{ checkinStore.streakTier.emoji || '🔥' }}</span>
+              <span class="done-summary-emoji streak-fire-icon"
+                :class="`streak-tier-${checkinStore.streakTier.tier}`">{{ checkinStore.streakTier.emoji || '🔥' }}</span>
               <div>
                 <div class="done-summary-value">{{ checkinStore.currentStreak }} วัน</div>
-                <div class="done-summary-label">Streak</div>
+                <div class="done-summary-label">{{ checkinStore.streakTier.label || 'Streak' }}</div>
               </div>
             </div>
             <div class="done-summary-item">
@@ -488,7 +516,7 @@
 
           <!-- Streak preview -->
           <div v-if="checkinStore.currentStreak > 0" class="checkin-streak-preview">
-            <span>{{ checkinStore.streakTier.emoji }}</span>
+            <span class="streak-fire-icon" :class="`streak-tier-${checkinStore.streakTier.tier}`">🔥</span>
             <span>{{ checkinStore.currentStreak }} วัน streak — เช็คชื่อเพื่อต่อ!</span>
           </div>
 
@@ -832,6 +860,7 @@ const { pushPermission, isRegistering, isSupported: isPushSupported, requestPerm
 const leftDrawerOpen = ref(false)
 const showCreateProjectDialog = ref(false)
 const showNotifPanel = ref(false)
+const notifLightboxURL = ref(null)
 const showHelpDialog = ref(false)
 const openHelpSections = ref([0])
 const showCheckinDialog = ref(false)
@@ -1156,6 +1185,8 @@ const handleNotifClick = async (notif) => {
     router.push('/expenses')
   } else if (['leave_submitted', 'leave_approved', 'leave_rejected'].includes(notif.type)) {
     router.push('/leaves')
+  } else if (['meeting_invite', 'meeting_cancelled'].includes(notif.type)) {
+    router.push('/meeting-room')
   } else if (notif.projectId) {
     const isSameProject = notif.projectId === projectsStore.currentProject?.id
       && router.currentRoute.value.path === `/project/${notif.projectId}`
@@ -1272,6 +1303,12 @@ const handleNotifClick = async (notif) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.checkin-dialog-icon-emoji {
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 .checkin-dialog-title {
@@ -1412,6 +1449,64 @@ const handleNotifClick = async (notif) => {
   color: #ffb74d;
 }
 
+.streak-tier-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #ff9800;
+  opacity: 0.8;
+}
+
+/* ====== Streak Fire Tier Animations ====== */
+.streak-fire-icon {
+  display: inline-block;
+  position: relative;
+}
+
+/* Tier 1: Subtle warm glow */
+.streak-fire-icon.streak-tier-1 {
+  filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.4));
+}
+
+/* Tier 2: Pulse glow animation */
+.streak-fire-icon.streak-tier-2 {
+  animation: fire-pulse 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.6));
+}
+
+/* Tier 3: Intense glow + flicker animation */
+.streak-fire-icon.streak-tier-3 {
+  animation: fire-legendary 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(255, 87, 34, 0.8)) drop-shadow(0 0 20px rgba(255, 152, 0, 0.4));
+}
+
+@keyframes fire-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 152, 0, 0.5));
+  }
+  50% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 8px rgba(255, 152, 0, 0.8));
+  }
+}
+
+@keyframes fire-legendary {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 8px rgba(255, 87, 34, 0.8)) drop-shadow(0 0 16px rgba(255, 152, 0, 0.4));
+  }
+  25% {
+    transform: scale(1.1) rotate(-3deg);
+  }
+  50% {
+    transform: scale(1.18) rotate(0deg);
+    filter: drop-shadow(0 0 14px rgba(255, 87, 34, 1)) drop-shadow(0 0 28px rgba(255, 152, 0, 0.6));
+  }
+  75% {
+    transform: scale(1.1) rotate(3deg);
+  }
+}
+
 .celebration-level {
   display: flex;
   align-items: center;
@@ -1458,6 +1553,7 @@ const handleNotifClick = async (notif) => {
 
 .done-summary-item {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1468,8 +1564,9 @@ const handleNotifClick = async (notif) => {
 }
 
 .done-summary-emoji {
-  font-size: 1.2rem;
   flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 .done-summary-value {
@@ -2514,6 +2611,16 @@ const handleNotifClick = async (notif) => {
   color: #ffb74d;
 }
 
+.notif-icon-meeting_invite {
+  background: rgba(38, 198, 218, 0.12);
+  color: #26c6da;
+}
+
+.notif-icon-meeting_cancelled {
+  background: rgba(239, 83, 80, 0.12);
+  color: #ef5350;
+}
+
 .notif-content {
   flex: 1;
   min-width: 0;
@@ -2536,6 +2643,62 @@ const handleNotifClick = async (notif) => {
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.3px;
+}
+
+.notif-broadcast-img {
+  max-width: 100%;
+  max-height: 140px;
+  border-radius: 8px;
+  margin-top: 6px;
+  object-fit: cover;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.notif-broadcast-img:hover {
+  opacity: 0.85;
+}
+
+.notif-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+}
+
+.notif-lightbox-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 12px;
+  object-fit: contain;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+
+.notif-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.notif-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .notif-msg {

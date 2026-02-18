@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  sendPasswordResetEmail
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, collection, getDocs, updateDoc } from 'firebase/firestore'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
@@ -232,6 +233,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Send password reset email
+  const resetPassword = async (emailAddress) => {
+    try {
+      loading.value = true
+      error.value = null
+      await sendPasswordResetEmail(auth, emailAddress)
+    } catch (err) {
+      error.value = err.message
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   // Clear error
   const clearError = () => {
     error.value = null
@@ -257,6 +272,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     register,
     logout,
+    resetPassword,
     clearError,
     fetchProfile,
     saveProfile,

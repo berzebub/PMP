@@ -40,6 +40,19 @@
             <div v-if="game.subtitle" class="game-card-subtitle">{{ game.subtitle }}</div>
             <div class="game-card-desc">{{ game.description }}</div>
             <div class="game-card-footer">
+              <div
+                class="game-card-tag"
+                :class="{
+                  'game-card-tag--multi': game.mode === 'multi',
+                  'game-card-tag--both': game.mode === 'both'
+                }"
+              >
+                <q-icon
+                  :name="game.mode === 'single' ? 'person' : game.mode === 'multi' ? 'groups' : 'people'"
+                  size="12px"
+                />
+                <span>{{ game.mode === 'single' ? 'Solo' : game.mode === 'multi' ? 'Multiplayer' : 'Solo / Multi' }}</span>
+              </div>
               <div class="game-card-tag">
                 <q-icon name="speed" size="12px" />
                 <span>{{ game.difficulty }}</span>
@@ -318,6 +331,16 @@ onMounted(() => {
   background: rgba(58, 59, 62, 0.25);
   padding: 4px 10px;
   border-radius: 20px;
+}
+
+.game-card-tag--multi {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.12);
+}
+
+.game-card-tag--both {
+  color: #7c4dff;
+  background: rgba(124, 77, 255, 0.12);
 }
 
 /* ====== Leaderboard Section ====== */

@@ -71,7 +71,25 @@
         </div>
         <div class="att-stat-card">
           <div class="att-stat-icon" style="color: #42a5f5;">
-            <q-icon name="schedule" size="22px" />
+            <q-icon name="hourglass_bottom" size="22px" />
+          </div>
+          <div class="att-stat-info">
+            <div class="att-stat-value">{{ stats.totalHours }} <span class="att-stat-unit">ชม.</span></div>
+            <div class="att-stat-label">ชั่วโมงทำงานรวม</div>
+          </div>
+        </div>
+        <div class="att-stat-card" :class="{ 'att-stat-card-alert': stats.diffMin < 0, 'att-stat-card-good': stats.diffMin > 0 }">
+          <div class="att-stat-icon" :style="{ color: stats.diffMin < 0 ? '#ef5350' : stats.diffMin > 0 ? '#66bb6a' : '#6b6c6f' }">
+            <q-icon :name="stats.diffMin < 0 ? 'trending_down' : stats.diffMin > 0 ? 'trending_up' : 'remove'" size="22px" />
+          </div>
+          <div class="att-stat-info">
+            <div class="att-stat-value" :class="{ 'att-stat-deficit': stats.diffMin < 0, 'att-stat-surplus': stats.diffMin > 0 }">{{ stats.diffLabel }} <span class="att-stat-unit">ชม.</span></div>
+            <div class="att-stat-label">{{ stats.diffMin < 0 ? 'ชั่วโมงที่ขาด' : stats.diffMin > 0 ? 'ทำงานเกิน' : 'พอดี' }}</div>
+          </div>
+        </div>
+        <div class="att-stat-card">
+          <div class="att-stat-icon" style="color: #66bb6a;">
+            <q-icon name="login" size="22px" />
           </div>
           <div class="att-stat-info">
             <div class="att-stat-value">{{ stats.avgCheckIn || '-' }}</div>
@@ -79,12 +97,30 @@
           </div>
         </div>
         <div class="att-stat-card">
-          <div class="att-stat-icon" style="color: #ab47bc;">
+          <div class="att-stat-icon" style="color: #42a5f5;">
             <q-icon name="logout" size="22px" />
           </div>
           <div class="att-stat-info">
             <div class="att-stat-value">{{ stats.avgCheckOut || '-' }}</div>
             <div class="att-stat-label">เวลาออกเฉลี่ย</div>
+          </div>
+        </div>
+        <div class="att-stat-card">
+          <div class="att-stat-icon" style="color: #ef5350;">
+            <q-icon name="alarm" size="22px" />
+          </div>
+          <div class="att-stat-info">
+            <div class="att-stat-value">{{ stats.lateDays }}</div>
+            <div class="att-stat-label">มาสาย</div>
+          </div>
+        </div>
+        <div class="att-stat-card">
+          <div class="att-stat-icon" style="color: #ffb74d;">
+            <q-icon name="timer_off" size="22px" />
+          </div>
+          <div class="att-stat-info">
+            <div class="att-stat-value">{{ stats.shortDays }}</div>
+            <div class="att-stat-label">ไม่ครบเวลา</div>
           </div>
         </div>
         <div class="att-stat-card">
@@ -94,6 +130,15 @@
           <div class="att-stat-info">
             <div class="att-stat-value">{{ stats.missingOut }}</div>
             <div class="att-stat-label">ไม่มีเวลาออก</div>
+          </div>
+        </div>
+        <div class="att-stat-card">
+          <div class="att-stat-icon" style="color: #ab47bc;">
+            <q-icon name="event_busy" size="22px" />
+          </div>
+          <div class="att-stat-info">
+            <div class="att-stat-value">{{ stats.leaveDays }}</div>
+            <div class="att-stat-label">วันลา</div>
           </div>
         </div>
       </div>
@@ -132,6 +177,7 @@
               <th class="att-th-out">เวลาออก</th>
               <th class="att-th-hours">ชั่วโมง</th>
               <th class="att-th-status">สถานะ</th>
+              <th v-if="canViewAll" class="att-th-action"></th>
             </tr>
           </thead>
           <tbody>
@@ -144,7 +190,11 @@
               <td class="att-td-date">{{ day.dayNum }}</td>
               <td class="att-td-day" :class="{ 'att-day-weekend': day.isWeekend }">{{ day.dayName }}</td>
               <td class="att-td-in">
-                <span v-if="day.record?.punchIn" class="att-time-in">{{ day.record.punchIn }}</span>
+                <span v-if="day.record?.punchIn" class="att-time-in" :class="{ 'att-time-late': day.isLate }">
+                  <q-icon v-if="day.record?.isManual" name="person" size="12px" class="att-manual-icon" />
+                  {{ day.record.punchIn }}
+                  <q-icon v-if="day.isLate" name="alarm" size="13px" class="att-late-icon" />
+                </span>
                 <span v-else-if="!day.isWeekend && day.isPast" class="att-time-absent">-</span>
               </td>
               <td class="att-td-out">
@@ -157,9 +207,30 @@
               </td>
               <td class="att-td-status">
                 <span v-if="day.isWeekend" class="att-badge att-badge-weekend">วันหยุด</span>
-                <span v-else-if="day.record?.punchIn && day.record?.punchOut" class="att-badge att-badge-normal">ปกติ</span>
-                <span v-else-if="day.record?.punchIn && !day.record?.punchOut" class="att-badge att-badge-warn">ไม่มีเวลาออก</span>
-                <span v-else-if="!day.record && day.isPast" class="att-badge att-badge-absent">ไม่มีข้อมูล</span>
+                <template v-else>
+                  <span v-if="day.isLate" class="att-badge att-badge-late">
+                    <q-icon name="alarm" size="11px" /> สาย
+                  </span>
+                  <span v-if="day.isShortHours" class="att-badge att-badge-short">
+                    <q-icon name="timer_off" size="11px" /> ไม่ครบเวลา
+                  </span>
+                  <span v-else-if="!day.isLate && day.record?.punchIn && day.record?.punchOut" class="att-badge att-badge-normal">ปกติ</span>
+                  <span v-else-if="day.record?.punchIn && !day.record?.punchOut" class="att-badge att-badge-warn">ไม่มีเวลาออก</span>
+                  <span v-else-if="!day.record && !day.leave && day.isPast" class="att-badge att-badge-absent">ไม่มีข้อมูล</span>
+                  <span v-if="day.leave" class="att-badge att-badge-leave" :class="{ 'att-badge-leave-pending': day.leave.status !== 'approved' }" :style="{ '--leave-color': (leaveTypeMap[day.leave.leaveType] || leaveTypeMap.other).color }">
+                    {{ (leaveTypeMap[day.leave.leaveType] || leaveTypeMap.other).label }}
+                    <template v-if="day.leave.durationType === 'half_day'"> (ครึ่งวัน)</template>
+                    <template v-if="day.leave.status !== 'approved'"> ⏳</template>
+                  </span>
+                </template>
+                <q-icon v-if="day.record?.note" name="sticky_note_2" size="13px" class="att-note-icon">
+                  <q-tooltip class="att-note-tooltip">{{ day.record.note }}</q-tooltip>
+                </q-icon>
+              </td>
+              <td v-if="canViewAll" class="att-td-action">
+                <button class="att-edit-btn" @click="openEditDialog(day)">
+                  <q-icon name="edit" size="14px" />
+                </button>
               </td>
             </tr>
           </tbody>
@@ -187,13 +258,27 @@
             :class="{
               'cal-cell-weekend': day.isWeekend,
               'cal-cell-today': day.isToday,
-              'cal-cell-has-data': !!day.record,
-              'cal-cell-absent': !day.isWeekend && !day.record && day.isPast,
-              'cal-cell-missing-out': day.record?.punchIn && !day.record?.punchOut
-            }">
+              'cal-cell-has-data': !!day.record && !day.isLate && !day.isShortHours,
+              'cal-cell-late': day.isLate,
+              'cal-cell-short': !day.isLate && day.isShortHours,
+              'cal-cell-absent': !day.isWeekend && !day.record && !day.leave && day.isPast,
+              'cal-cell-missing-out': !day.isLate && day.record?.punchIn && !day.record?.punchOut,
+              'cal-cell-leave': !!day.leave && !day.isWeekend,
+              'cal-cell-editable': canViewAll
+            }"
+            @click="canViewAll ? openEditDialog(day) : null">
+            <!-- Edit icon on hover (HR only) -->
+            <button v-if="canViewAll" class="cal-edit-btn" @click.stop="openEditDialog(day)">
+              <q-icon name="edit" size="11px" />
+            </button>
+
             <!-- Day number -->
-            <div class="cal-day-num" :class="{ 'cal-day-weekend-num': day.isWeekend, 'cal-day-today-num': day.isToday }">
-              {{ day.dayNum }}
+            <div class="cal-day-num-row">
+              <div class="cal-day-num" :class="{ 'cal-day-weekend-num': day.isWeekend, 'cal-day-today-num': day.isToday }">
+                {{ day.dayNum }}
+              </div>
+              <q-icon v-if="day.isLate" name="alarm" size="12px" class="cal-late-icon" />
+              <q-icon v-if="day.isShortHours" name="timer_off" size="12px" class="cal-short-icon" />
             </div>
 
             <!-- Punch data -->
@@ -211,35 +296,114 @@
                 <span>ไม่มี</span>
               </div>
               <div v-if="day.hours" class="cal-hours">{{ day.hours }} ชม.</div>
+              <div v-if="day.record.note" class="cal-note-indicator">
+                <q-icon name="sticky_note_2" size="10px" />
+              </div>
+            </div>
+
+            <!-- Leave pill (shown alongside punch data or standalone) -->
+            <div v-if="day.leave && !day.isWeekend" class="cal-leave-pill" :class="{ 'cal-leave-pending': day.leave.status !== 'approved' }" :style="{ '--leave-color': (leaveTypeMap[day.leave.leaveType] || leaveTypeMap.other).color }">
+              {{ (leaveTypeMap[day.leave.leaveType] || leaveTypeMap.other).label }}<template v-if="day.leave.durationType === 'half_day'"> ½</template>
             </div>
 
             <!-- Weekend / No data indicators -->
             <div v-else-if="day.isWeekend" class="cal-weekend-label">หยุด</div>
-            <div v-else-if="day.isPast" class="cal-absent-label">-</div>
+            <div v-else-if="!day.record && day.isPast" class="cal-absent-label">-</div>
           </div>
         </div>
 
         <!-- Legend -->
         <div class="cal-legend">
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background: #66bb6a;"></div>
-            <span>มาทำงาน</span>
+            <q-icon name="login" size="13px" style="color: #66bb6a;" />
+            <span>เวลาเข้า</span>
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background: #ffb74d;"></div>
+            <q-icon name="logout" size="13px" style="color: #42a5f5;" />
+            <span>เวลาออก</span>
+          </div>
+          <div class="cal-legend-item">
+            <q-icon name="alarm" size="13px" style="color: #ef5350;" />
+            <span>สาย (หลัง 9:15)</span>
+          </div>
+          <div class="cal-legend-item">
+            <q-icon name="timer_off" size="13px" style="color: #ffb74d;" />
+            <span>ไม่ครบเวลา</span>
+          </div>
+          <div class="cal-legend-item">
+            <q-icon name="help_outline" size="13px" style="color: #ffb74d;" />
             <span>ไม่มีเวลาออก</span>
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background: #ef5350;"></div>
-            <span>ไม่มีข้อมูล</span>
+            <div class="cal-legend-border" style="border-color: #3a3b3e;"></div>
+            <span>วันหยุด / ไม่มีข้อมูล</span>
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background: #3a3b3e;"></div>
-            <span>วันหยุด</span>
+            <div class="cal-legend-pill" style="background: rgba(239,83,80,0.16); color: #ef5350;">ลา</div>
+            <span>ลาป่วย</span>
+          </div>
+          <div class="cal-legend-item">
+            <div class="cal-legend-pill" style="background: rgba(255,183,77,0.16); color: #ffb74d;">ลา</div>
+            <span>ลากิจ</span>
+          </div>
+          <div class="cal-legend-item">
+            <div class="cal-legend-pill" style="background: rgba(66,165,245,0.16); color: #42a5f5;">ลา</div>
+            <span>ลาพักร้อน</span>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Edit Attendance Dialog -->
+    <q-dialog v-model="showEditDialog" persistent class="att-edit-dialog-backdrop">
+      <div class="att-edit-dialog">
+        <div class="att-edit-header">
+          <div class="att-edit-header-icon">
+            <q-icon :name="editDay?.record ? 'edit' : 'add_circle_outline'" size="22px" />
+          </div>
+          <div>
+            <div class="att-edit-title">{{ editDay?.record ? 'แก้ไขเวลาเข้า-ออก' : 'เพิ่มเวลาเข้า-ออก' }}</div>
+            <div class="att-edit-subtitle">{{ editDay?.dayNum }} {{ monthLabel }} ({{ editDay?.dayName }})</div>
+          </div>
+        </div>
+
+        <div class="att-edit-body">
+          <div class="att-edit-fields-row">
+            <div class="att-edit-field">
+              <label class="att-edit-label">เวลาเข้า</label>
+              <input v-model="editPunchIn" type="time" class="att-edit-input" />
+            </div>
+            <div class="att-edit-field">
+              <label class="att-edit-label">เวลาออก</label>
+              <input v-model="editPunchOut" type="time" class="att-edit-input" />
+            </div>
+          </div>
+
+          <div class="att-edit-field">
+            <label class="att-edit-label">หมายเหตุ / เหตุผล</label>
+            <textarea v-model="editNote" class="att-edit-textarea" rows="3"
+              placeholder="เช่น ไปทำงานต่างจังหวัด, ลืมสแกนนิ้ว..."></textarea>
+          </div>
+
+          <div v-if="editDay?.record?.isManual" class="att-edit-manual-hint">
+            <q-icon name="person" size="14px" />
+            <span>รายการนี้สร้างด้วยมือโดย HR</span>
+          </div>
+        </div>
+
+        <div class="att-edit-actions">
+          <button class="att-edit-cancel-btn" @click="closeEditDialog">
+            <q-icon name="close" size="16px" />
+            <span>ยกเลิก</span>
+          </button>
+          <button class="att-edit-save-btn" :disabled="editSaving" @click="handleEditSave">
+            <q-spinner v-if="editSaving" size="14px" color="white" />
+            <q-icon v-else name="save" size="16px" />
+            <span>{{ editSaving ? 'กำลังบันทึก...' : 'บันทึก' }}</span>
+          </button>
+        </div>
+      </div>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -255,7 +419,17 @@ const now = new Date()
 const currentMonth = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
 const selectedUserId = ref('')
 const records = ref([])
+const leaves = ref([])
 const viewMode = ref('calendar')
+
+const leaveTypeMap = {
+  sick: { label: 'ลาป่วย', icon: '🤒', color: '#ef5350' },
+  personal: { label: 'ลากิจ', icon: '📋', color: '#ffb74d' },
+  vacation: { label: 'ลาพักร้อน', icon: '🏖️', color: '#42a5f5' },
+  maternity: { label: 'ลาคลอด', icon: '🤱', color: '#ec407a' },
+  unpaid: { label: 'ลาไม่รับค่าจ้าง', icon: '💼', color: '#9e9e9e' },
+  other: { label: 'ลาอื่นๆ', icon: '📝', color: '#9e9e9e' }
+}
 
 const canViewAll = computed(() => authStore.isSuperAdmin || authStore.isHR)
 
@@ -281,6 +455,10 @@ const changeMonth = (delta) => {
 
 const dayNames = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
 
+const LATE_THRESHOLD = 9 * 60 + 15 // 09:15
+const LUNCH_BREAK_MINUTES = 60
+const REQUIRED_MINUTES = 450 // 7h30m
+
 const calendarDays = computed(() => {
   const [y, m] = currentMonth.value.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
@@ -299,16 +477,31 @@ const calendarDays = computed(() => {
     const record = recordMap[dateStr] || null
 
     let hours = ''
-    if (record?.punchIn && record?.punchOut) {
+    let workedMinutes = 0
+    let isLate = false
+    let isShortHours = false
+
+    if (record?.punchIn) {
       const [hIn, mIn] = record.punchIn.split(':').map(Number)
-      const [hOut, mOut] = record.punchOut.split(':').map(Number)
-      const totalMin = (hOut * 60 + mOut) - (hIn * 60 + mIn)
-      if (totalMin > 0) {
-        const h = Math.floor(totalMin / 60)
-        const min = totalMin % 60
-        hours = `${h}:${String(min).padStart(2, '0')}`
+      const punchInMin = hIn * 60 + mIn
+      isLate = punchInMin > LATE_THRESHOLD
+
+      if (record.punchOut) {
+        const [hOut, mOut] = record.punchOut.split(':').map(Number)
+        const grossMinutes = (hOut * 60 + mOut) - punchInMin
+        workedMinutes = grossMinutes > LUNCH_BREAK_MINUTES ? grossMinutes - LUNCH_BREAK_MINUTES : grossMinutes
+        if (workedMinutes > 0) {
+          const h = Math.floor(workedMinutes / 60)
+          const min = workedMinutes % 60
+          hours = `${h}:${String(min).padStart(2, '0')}`
+        }
+        if (workedMinutes > 0 && workedMinutes < REQUIRED_MINUTES) {
+          isShortHours = true
+        }
       }
     }
+
+    const leave = leaves.value.find(l => l.startDate <= dateStr && l.endDate >= dateStr) || null
 
     days.push({
       dayNum: d,
@@ -318,7 +511,11 @@ const calendarDays = computed(() => {
       isToday: dateStr === todayStr,
       isPast: dateObj <= today,
       record,
-      hours
+      hours,
+      isLate,
+      isShortHours,
+      workedMinutes,
+      leave
     })
   }
   return days
@@ -348,6 +545,9 @@ const stats = computed(() => {
   const withOut = recs.filter(r => r.punchIn && r.punchOut)
   const missingOut = recs.filter(r => r.punchIn && !r.punchOut).length
 
+  const lateDays = calendarDays.value.filter(d => d.isLate).length
+  const shortDays = calendarDays.value.filter(d => d.isShortHours).length
+
   let avgCheckIn = ''
   let avgCheckOut = ''
 
@@ -371,13 +571,31 @@ const stats = computed(() => {
     avgCheckOut = `${String(Math.floor(avg / 60)).padStart(2, '0')}:${String(avg % 60).padStart(2, '0')}`
   }
 
-  return { totalDays, avgCheckIn, avgCheckOut, missingOut }
+  const leaveDays = calendarDays.value.filter(d => d.leave && d.leave.status === 'approved' && !d.isWeekend).length
+
+  const totalWorkedMin = calendarDays.value.reduce((sum, d) => sum + d.workedMinutes, 0)
+  const totalWorkedH = Math.floor(totalWorkedMin / 60)
+  const totalWorkedM = totalWorkedMin % 60
+  const totalHours = `${totalWorkedH}:${String(totalWorkedM).padStart(2, '0')}`
+
+  const expectedMin = totalDays * REQUIRED_MINUTES
+  const diffMin = totalWorkedMin - expectedMin
+  const absDiffMin = Math.abs(diffMin)
+  const diffH = Math.floor(absDiffMin / 60)
+  const diffM = absDiffMin % 60
+  const diffLabel = `${diffMin >= 0 ? '+' : '-'}${diffH}:${String(diffM).padStart(2, '0')}`
+
+  return { totalDays, avgCheckIn, avgCheckOut, missingOut, lateDays, shortDays, leaveDays, totalHours, diffMin, diffLabel }
 })
 
 const loadData = async () => {
   if (!effectiveUserId.value) return
-  const data = await attendanceStore.fetchMonthlyAttendance(effectiveUserId.value, currentMonth.value)
+  const [data, userLeaves] = await Promise.all([
+    attendanceStore.fetchMonthlyAttendance(effectiveUserId.value, currentMonth.value),
+    attendanceStore.fetchUserLeaves(effectiveUserId.value, currentMonth.value)
+  ])
   records.value = data
+  leaves.value = userLeaves
 }
 
 // Watch for month or selected user changes to reload data
@@ -396,6 +614,69 @@ onMounted(async () => {
   }
   await loadData()
 })
+
+// ====== Edit Dialog ======
+const showEditDialog = ref(false)
+const editDay = ref(null)
+const editPunchIn = ref('')
+const editPunchOut = ref('')
+const editNote = ref('')
+const editSaving = ref(false)
+
+const openEditDialog = (day) => {
+  editDay.value = day
+  editPunchIn.value = day.record?.punchIn || ''
+  editPunchOut.value = day.record?.punchOut || ''
+  editNote.value = day.record?.note || ''
+  showEditDialog.value = true
+}
+
+const closeEditDialog = () => {
+  showEditDialog.value = false
+  editDay.value = null
+  editPunchIn.value = ''
+  editPunchOut.value = ''
+  editNote.value = ''
+}
+
+const handleEditSave = async () => {
+  if (!editDay.value) return
+  editSaving.value = true
+
+  const day = editDay.value
+  const hrEmail = authStore.profile?.email || ''
+
+  let success = false
+
+  if (day.record?.id) {
+    success = await attendanceStore.updateRecord(day.record.id, {
+      punchIn: editPunchIn.value || null,
+      punchOut: editPunchOut.value || null,
+      note: editNote.value,
+      editedBy: hrEmail
+    })
+  } else {
+    const targetUser = allUsers.value.find(u => u.email === effectiveUserId.value)
+    success = await attendanceStore.upsertRecord({
+      userId: effectiveUserId.value,
+      userName: targetUser ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() : '',
+      date: day.date,
+      punchIn: editPunchIn.value || null,
+      punchOut: editPunchOut.value || null,
+      note: editNote.value,
+      department: targetUser?.department || '',
+      importMonth: currentMonth.value,
+      editedBy: hrEmail
+    })
+  }
+
+  editSaving.value = false
+
+  if (success) {
+    closeEditDialog()
+    await loadData()
+  }
+}
 </script>
 
 <style scoped>
@@ -575,6 +856,25 @@ onMounted(async () => {
   margin-top: 1px;
 }
 
+.att-stat-unit {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #6b6c6f;
+}
+
+.att-stat-card-alert {
+  border-color: rgba(239, 83, 80, 0.25);
+  background: rgba(239, 83, 80, 0.04);
+}
+
+.att-stat-card-good {
+  border-color: rgba(102, 187, 106, 0.25);
+  background: rgba(102, 187, 106, 0.04);
+}
+
+.att-stat-deficit { color: #ef5350; }
+.att-stat-surplus { color: #66bb6a; }
+
 /* Loading/Empty */
 .att-loading, .att-empty {
   display: flex;
@@ -727,9 +1027,43 @@ onMounted(async () => {
   color: #ef5350;
 }
 
+.att-badge-late {
+  background: rgba(239, 83, 80, 0.12);
+  color: #ef5350;
+  gap: 3px;
+}
+
+.att-badge-short {
+  background: rgba(255, 183, 77, 0.12);
+  color: #ffb74d;
+  gap: 3px;
+}
+
 .att-badge-weekend {
   background: rgba(58, 59, 62, 0.1);
   color: #4a4b4e;
+}
+
+.att-badge-leave {
+  background: color-mix(in srgb, var(--leave-color) 14%, transparent);
+  color: var(--leave-color);
+  gap: 3px;
+}
+
+.att-badge-leave-pending {
+  opacity: 0.6;
+  border: 1px dashed var(--leave-color);
+}
+
+/* Late icon inline with punch-in time */
+.att-time-late {
+  color: #ef5350 !important;
+}
+
+.att-late-icon {
+  color: #ef5350;
+  margin-left: 4px;
+  vertical-align: middle;
 }
 
 /* View Toggle */
@@ -859,12 +1193,42 @@ onMounted(async () => {
   border-left: 2px solid rgba(255, 183, 77, 0.4);
 }
 
+.cal-cell-late {
+  border-left: 2px solid rgba(239, 83, 80, 0.5);
+  background: rgba(239, 83, 80, 0.03);
+}
+
+.cal-cell-short {
+  border-left: 2px solid rgba(255, 183, 77, 0.5);
+  background: rgba(255, 183, 77, 0.03);
+}
+
+.cal-cell-leave {
+  border-left: 2px solid rgba(171, 71, 188, 0.45);
+  background: rgba(171, 71, 188, 0.03);
+}
+
+/* Day number row (number + late icon) */
+.cal-day-num-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.cal-late-icon {
+  color: #ef5350;
+}
+
+.cal-short-icon {
+  color: #ffb74d;
+}
+
 /* Day number */
 .cal-day-num {
   font-size: 0.78rem;
   font-weight: 700;
   color: #9e9fa2;
-  margin-bottom: 4px;
 }
 
 .cal-day-weekend-num {
@@ -950,10 +1314,297 @@ onMounted(async () => {
   color: #6b6c6f;
 }
 
-.cal-legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.cal-legend-border {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border-left: 3px solid;
+  background: rgba(58, 59, 62, 0.06);
+}
+
+.cal-legend-pill {
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0px 4px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+
+/* Table edit column */
+.att-th-action {
+  width: 40px;
+}
+
+.att-td-action {
+  text-align: center;
+}
+
+.att-edit-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #6b6c6f;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.att-edit-btn:hover {
+  background: rgba(171, 71, 188, 0.12);
+  color: #ce93d8;
+}
+
+/* Note icon */
+.att-note-icon {
+  color: #ffb74d;
+  margin-left: 5px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.att-note-tooltip {
+  font-size: 0.78rem;
+  max-width: 260px;
+}
+
+/* Manual badge */
+.att-manual-icon {
+  color: #7e57c2;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+/* Calendar edit button (hover) */
+.cal-edit-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: none;
+  background: rgba(171, 71, 188, 0.15);
+  color: #ce93d8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+
+.cal-cell-editable {
+  cursor: pointer;
+}
+
+.cal-cell-editable:hover .cal-edit-btn {
+  opacity: 1;
+}
+
+/* Calendar note indicator */
+.cal-note-indicator {
+  color: #ffb74d;
+  font-size: 0.58rem;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Calendar leave pill */
+.cal-leave-pill {
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 6px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--leave-color) 16%, transparent);
+  color: var(--leave-color);
+}
+
+.cal-leave-pending {
+  opacity: 0.6;
+  border: 1px dashed var(--leave-color);
+}
+
+/* Edit Dialog */
+.att-edit-dialog {
+  background: #1e1f22;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+  border-radius: 16px;
+  padding: 0;
+  min-width: 380px;
+  max-width: 440px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.att-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.att-edit-header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(171, 71, 188, 0.15) 0%, rgba(123, 31, 162, 0.1) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ab47bc;
+}
+
+.att-edit-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e4e5e7;
+}
+
+.att-edit-subtitle {
+  font-size: 0.78rem;
+  color: #6b6c6f;
+  margin-top: 2px;
+}
+
+.att-edit-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.att-edit-fields-row {
+  display: flex;
+  gap: 12px;
+}
+
+.att-edit-fields-row .att-edit-field {
+  flex: 1;
+}
+
+.att-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.att-edit-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b6c6f;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.att-edit-input {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: rgba(24, 25, 28, 0.6);
+  color: #e4e5e7;
+  font-size: 0.9rem;
+  font-family: monospace;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.att-edit-input:focus {
+  border-color: rgba(171, 71, 188, 0.5);
+}
+
+.att-edit-textarea {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: rgba(24, 25, 28, 0.6);
+  color: #e4e5e7;
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  transition: border-color 0.2s;
+}
+
+.att-edit-textarea:focus {
+  border-color: rgba(171, 71, 188, 0.5);
+}
+
+.att-edit-manual-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #7e57c2;
+  padding: 6px 10px;
+  background: rgba(126, 87, 194, 0.08);
+  border-radius: 8px;
+}
+
+.att-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid rgba(58, 59, 62, 0.2);
+}
+
+.att-edit-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #cecfd2;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.att-edit-cancel-btn:hover {
+  background: rgba(58, 59, 62, 0.15);
+}
+
+.att-edit-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 22px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #ab47bc 0%, #7b1fa2 100%);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.att-edit-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(171, 71, 188, 0.3);
+}
+
+.att-edit-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 @media (max-width: 640px) {
@@ -970,5 +1621,7 @@ onMounted(async () => {
   .cal-hours { font-size: 0.52rem; }
   .cal-no-out { font-size: 0.54rem; }
   .cal-header-cell { font-size: 0.62rem; padding: 8px 2px; }
+  .att-edit-dialog { min-width: unset; max-width: 100%; }
+  .att-edit-fields-row { flex-direction: column; gap: 12px; }
 }
 </style>

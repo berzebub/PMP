@@ -18,10 +18,11 @@
       <!-- Stats Cards Row -->
       <div class="stats-row">
         <div class="stat-card stat-streak">
-          <div class="stat-card-icon">{{ checkinStore.streakTier.emoji || '🔥' }}</div>
+          <div class="stat-card-icon streak-fire-icon"
+            :class="`streak-tier-${checkinStore.streakTier.tier}`">🔥</div>
           <div class="stat-card-info">
             <div class="stat-card-value">{{ checkinStore.currentStreak }}</div>
-            <div class="stat-card-label">Streak ปัจจุบัน</div>
+            <div class="stat-card-label">{{ checkinStore.streakTier.label || 'Streak' }}</div>
           </div>
         </div>
         <div class="stat-card stat-longest">
@@ -1078,6 +1079,53 @@ const formatHistoryDate = (dateStr) => {
 
   .checkin-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ====== Streak Fire Tier Animations ====== */
+.streak-fire-icon {
+  display: inline-block;
+}
+
+.streak-fire-icon.streak-tier-1 {
+  filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.4));
+}
+
+.streak-fire-icon.streak-tier-2 {
+  animation: fire-pulse 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.6));
+}
+
+.streak-fire-icon.streak-tier-3 {
+  animation: fire-legendary 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(255, 87, 34, 0.8)) drop-shadow(0 0 20px rgba(255, 152, 0, 0.4));
+}
+
+@keyframes fire-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 152, 0, 0.5));
+  }
+  50% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 8px rgba(255, 152, 0, 0.8));
+  }
+}
+
+@keyframes fire-legendary {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 8px rgba(255, 87, 34, 0.8)) drop-shadow(0 0 16px rgba(255, 152, 0, 0.4));
+  }
+  25% {
+    transform: scale(1.1) rotate(-3deg);
+  }
+  50% {
+    transform: scale(1.18) rotate(0deg);
+    filter: drop-shadow(0 0 14px rgba(255, 87, 34, 1)) drop-shadow(0 0 28px rgba(255, 152, 0, 0.6));
+  }
+  75% {
+    transform: scale(1.1) rotate(3deg);
   }
 }
 </style>

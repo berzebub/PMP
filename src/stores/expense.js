@@ -19,6 +19,7 @@ export const useExpenseStore = defineStore('expense', () => {
   const myExpenses = ref([])
   const allExpenses = ref([])
   const pendingExpenses = ref([])
+  const reportExpenses = ref([])
   const submitting = ref(false)
   const fetching = ref(false)
   const processing = ref(false)
@@ -61,7 +62,7 @@ export const useExpenseStore = defineStore('expense', () => {
   }
 
   // Submit expense request
-  const submitExpense = async ({ items, note = '', receiptFiles = {} }) => {
+  const submitExpense = async ({ items, note = '', receiptFiles = {}, receiveMethod = '', promptPayPhone = '', bankName = '', accountNumber = '', accountName = '' }) => {
     if (!authStore.user?.email) return false
 
     try {
@@ -87,6 +88,11 @@ export const useExpenseStore = defineStore('expense', () => {
         items: cleanItems,
         totalAmount,
         note: note.trim(),
+        receiveMethod: receiveMethod || '',
+        promptPayPhone: (promptPayPhone || '').trim(),
+        bankName: (bankName || '').trim(),
+        accountNumber: (accountNumber || '').trim(),
+        accountName: (accountName || '').trim(),
         status: 'pending_hr',
         submittedAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -331,17 +337,57 @@ export const useExpenseStore = defineStore('expense', () => {
     }
   }
 
+  // Fetch expense report with filters (for admin report page)
+  const fetchExpenseReport = async ({ mode = 'all', userId = '', department = '', startDate = '', endDate = '' }) => {
+    try {
+      fetching.value = true
+      error.value = null
+      reportExpenses.value = []
+
+      const rangeStart = startDate ? Timestamp.fromDate(new Date(startDate + 'T00:00:00')) : Timestamp.fromDate(new Date(`${new Date().getFullYear()}-01-01T00:00:00`))
+      const rangeEnd = endDate ? Timestamp.fromDate(new Date(endDate + 'T23:59:59')) : Timestamp.fromDate(new Date(`${new Date().getFullYear()}-12-31T23:59:59`))
+
+      const q = query(
+        collection(db, 'expenses'),
+        where('submittedAt', '>=', rangeStart),
+        where('submittedAt', '<=', rangeEnd),
+        orderBy('submittedAt', 'desc')
+      )
+
+      const snapshot = await getDocs(q)
+      let results = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      if (mode === 'individual' && userId) {
+        results = results.filter(e => e.userId === userId)
+      } else if (mode === 'department' && department) {
+        results = results.filter(e => e.department === department)
+      }
+
+      reportExpenses.value = results
+      return reportExpenses.value
+    } catch (err) {
+      console.error('Error fetching expense report:', err)
+      error.value = err.message
+      reportExpenses.value = []
+      return []
+    } finally {
+      fetching.value = false
+    }
+  }
+
   // Cleanup
   const cleanup = () => {
     myExpenses.value = []
     allExpenses.value = []
     pendingExpenses.value = []
+    reportExpenses.value = []
   }
 
   return {
     myExpenses,
     allExpenses,
     pendingExpenses,
+    reportExpenses,
     loading,
     submitting,
     fetching,
@@ -359,6 +405,7 @@ export const useExpenseStore = defineStore('expense', () => {
     fetchMyExpenses,
     fetchPendingExpenses,
     fetchAllExpenses,
+    fetchExpenseReport,
     cleanup
   }
 })

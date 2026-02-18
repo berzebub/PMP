@@ -66,6 +66,12 @@
               <q-icon name="login" class="q-mr-sm" />
               เข้าสู่ระบบ
             </q-btn>
+
+            <div class="forgot-password-row">
+              <q-btn flat dense no-caps class="forgot-password-link" @click="openForgotPassword">
+                ลืมรหัสผ่าน?
+              </q-btn>
+            </div>
           </q-form>
         </q-card-section>
 
@@ -81,8 +87,61 @@
         </q-card-section>
       </q-card>
 
+      <!-- Forgot Password Dialog -->
+      <q-dialog v-model="showForgotDialog" persistent>
+        <q-card class="forgot-dialog-card">
+          <q-card-section class="forgot-dialog-header">
+            <div class="forgot-dialog-icon">
+              <q-icon name="lock_reset" size="32px" />
+            </div>
+            <h3 class="forgot-dialog-title">รีเซ็ตรหัสผ่าน</h3>
+            <p class="forgot-dialog-subtitle">กรอกอีเมลของคุณเพื่อรับลิงก์รีเซ็ตรหัสผ่าน</p>
+          </q-card-section>
+
+          <q-card-section class="forgot-dialog-body">
+            <q-input
+              v-model="resetEmail"
+              type="email"
+              outlined
+              placeholder="กรอกอีเมลของคุณ"
+              class="custom-input"
+              :rules="[val => !!val || 'กรุณากรอกอีเมล', val => isValidEmail(val) || 'รูปแบบอีเมลไม่ถูกต้อง']"
+              :error="!!resetError"
+              :error-message="resetError"
+            >
+              <template v-slot:prepend>
+                <q-icon name="email" class="input-icon" />
+              </template>
+            </q-input>
+
+            <q-banner v-if="resetSuccess" class="success-banner q-mt-sm" rounded>
+              <template v-slot:avatar>
+                <q-icon name="check_circle" />
+              </template>
+              ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลของคุณแล้ว กรุณาตรวจสอบกล่องจดหมาย
+            </q-banner>
+          </q-card-section>
+
+          <q-card-actions class="forgot-dialog-actions">
+            <q-btn flat no-caps class="cancel-btn" @click="closeForgotPassword">
+              ยกเลิก
+            </q-btn>
+            <q-btn
+              no-caps
+              class="reset-btn"
+              :loading="resetLoading"
+              :disable="!resetEmail || resetSuccess"
+              @click="handleResetPassword"
+            >
+              <q-icon name="send" class="q-mr-xs" />
+              ส่งลิงก์รีเซ็ต
+            </q-btn>
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
+
       <!-- Features Section -->
-      <div class="features-section">
+      <!-- <div class="features-section">
         <div class="feature-item">
           <q-icon name="dashboard" class="feature-icon" />
           <span>Kanban Board</span>
@@ -95,7 +154,7 @@
           <q-icon name="group" class="feature-icon" />
           <span>Team Collaboration</span>
         </div>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>
@@ -112,6 +171,12 @@ const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 
+const showForgotDialog = ref(false)
+const resetEmail = ref('')
+const resetLoading = ref(false)
+const resetError = ref('')
+const resetSuccess = ref(false)
+
 const isValidEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   return emailRegex.test(email)
@@ -123,6 +188,46 @@ const handleLogin = async () => {
     router.push('/')
   } catch (error) {
     console.error('Login error:', error)
+  }
+}
+
+const openForgotPassword = () => {
+  resetEmail.value = email.value
+  resetError.value = ''
+  resetSuccess.value = false
+  showForgotDialog.value = true
+}
+
+const closeForgotPassword = () => {
+  showForgotDialog.value = false
+  resetEmail.value = ''
+  resetError.value = ''
+  resetSuccess.value = false
+}
+
+const handleResetPassword = async () => {
+  if (!resetEmail.value || !isValidEmail(resetEmail.value)) {
+    resetError.value = 'กรุณากรอกอีเมลที่ถูกต้อง'
+    return
+  }
+  try {
+    resetLoading.value = true
+    resetError.value = ''
+    await authStore.resetPassword(resetEmail.value)
+    resetSuccess.value = true
+  } catch (err) {
+    const code = err.code || ''
+    if (code === 'auth/user-not-found') {
+      resetError.value = 'ไม่พบบัญชีที่ใช้อีเมลนี้'
+    } else if (code === 'auth/invalid-email') {
+      resetError.value = 'รูปแบบอีเมลไม่ถูกต้อง'
+    } else if (code === 'auth/too-many-requests') {
+      resetError.value = 'ส่งคำขอมากเกินไป กรุณาลองใหม่ภายหลัง'
+    } else {
+      resetError.value = 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง'
+    }
+  } finally {
+    resetLoading.value = false
   }
 }
 </script>
@@ -349,6 +454,130 @@ const handleLogin = async () => {
   cursor: not-allowed;
 }
 
+.forgot-password-row {
+  text-align: center;
+  margin-top: -8px;
+}
+
+.forgot-password-link {
+  color: #5A6C7D;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  padding: 4px 12px;
+  border-radius: 8px;
+}
+
+.forgot-password-link:hover {
+  color: #00BFA6;
+  background: rgba(0, 191, 166, 0.08);
+}
+
+/* Forgot Password Dialog */
+.forgot-dialog-card {
+  min-width: 380px;
+  max-width: 440px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #FFFFFF !important;
+}
+
+.forgot-dialog-header {
+  text-align: center;
+  padding: 32px 32px 16px;
+  background: linear-gradient(135deg, #00BFA6, #26C6DA);
+  color: white;
+}
+
+.forgot-dialog-icon {
+  width: 60px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+}
+
+.forgot-dialog-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: white;
+}
+
+.forgot-dialog-subtitle {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  font-weight: 500;
+}
+
+.forgot-dialog-body {
+  padding: 28px 32px 8px;
+  background: #FFFFFF;
+}
+
+.forgot-dialog-body :deep(.q-field__control) {
+  background: #FFFFFF;
+  border: 2px solid #E1E5E9;
+}
+
+.forgot-dialog-body :deep(.q-field__native) {
+  color: #2C3A45 !important;
+}
+
+.forgot-dialog-body :deep(.q-field__native::placeholder) {
+  color: #8B95A1 !important;
+}
+
+.success-banner {
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #2E7D32;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.forgot-dialog-actions {
+  padding: 12px 32px 28px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: #FFFFFF;
+}
+
+.cancel-btn {
+  color: #5A6C7D;
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 10px 20px;
+  border-radius: 10px;
+}
+
+.cancel-btn:hover {
+  background: #F0F0F0;
+}
+
+.reset-btn {
+  background: linear-gradient(135deg, #00BFA6, #26C6DA);
+  color: white;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 10px 24px;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 191, 166, 0.3);
+  transition: all 0.3s ease;
+}
+
+.reset-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 191, 166, 0.4);
+}
+
 .card-footer {
   padding: 30px 40px 40px 40px;
   text-align: center;
@@ -465,6 +694,11 @@ const handleLogin = async () => {
   .features-section {
     flex-direction: column;
     align-items: center;
+  }
+
+  .forgot-dialog-card {
+    min-width: unset;
+    margin: 0 8px;
   }
 }
 </style>

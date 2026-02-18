@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore'
 import { db } from 'boot/firebase'
 import { useAuthStore } from './auth'
-import { generateQuestionBatch, vocabByLevel } from 'src/data/vocabCEFR'
+import { generateQuestionBatch, generateAdaptiveQuestion, vocabByLevel, LEVELS } from 'src/data/vocabCEFR'
 
 const COLLECTION = 'vocabBattleRooms'
 
@@ -676,6 +676,222 @@ export const useVocabBattleStore = defineStore('vocabBattle', () => {
     saveWrongWordsToStorage()
   }
 
+  // ==================== ADAPTIVE TEST ====================
+
+  const ADAPTIVE_MAX_QUESTIONS = 30
+  const ADAPTIVE_QUESTIONS_PER_ROUND = 5
+  const ADAPTIVE_PASS_THRESHOLD = 4
+  const ADAPTIVE_FAIL_THRESHOLD = 2
+
+  const adaptiveState = ref(null)
+
+  function startAdaptiveTest() {
+    const startLevelIdx = 1
+    const usedWords = new Set()
+    const firstQ = generateAdaptiveQuestion(LEVELS[startLevelIdx], usedWords)
+    if (!firstQ) return false
+
+    usedWords.add(firstQ.enKey)
+
+    adaptiveState.value = {
+      currentLevelIdx: startLevelIdx,
+      questionsAtLevel: 0,
+      correctAtLevel: 0,
+      totalQuestions: 0,
+      totalCorrect: 0,
+      highestPassed: -1,
+      history: [],
+      usedWords,
+      currentQuestion: firstQ.question,
+      isFinished: false,
+      result: null,
+      levelBreakdown: {},
+    }
+    return true
+  }
+
+  function _adaptiveNextQuestion() {
+    const st = adaptiveState.value
+    if (!st || st.isFinished) return
+
+    if (st.totalQuestions >= ADAPTIVE_MAX_QUESTIONS) {
+      _adaptiveFinish()
+      return
+    }
+
+    if (st.questionsAtLevel >= ADAPTIVE_QUESTIONS_PER_ROUND) {
+      const correct = st.correctAtLevel
+
+      if (correct >= ADAPTIVE_PASS_THRESHOLD) {
+        st.highestPassed = Math.max(st.highestPassed, st.currentLevelIdx)
+        if (st.currentLevelIdx >= LEVELS.length - 1) {
+          _adaptiveFinish()
+          return
+        }
+        st.currentLevelIdx++
+      } else if (correct <= ADAPTIVE_FAIL_THRESHOLD) {
+        _adaptiveFinish()
+        return
+      }
+
+      st.questionsAtLevel = 0
+      st.correctAtLevel = 0
+    }
+
+    const q = generateAdaptiveQuestion(LEVELS[st.currentLevelIdx], st.usedWords)
+    if (!q) {
+      _adaptiveFinish()
+      return
+    }
+
+    st.usedWords.add(q.enKey)
+    st.currentQuestion = q.question
+  }
+
+  function submitAdaptiveAnswer(idx) {
+    const st = adaptiveState.value
+    if (!st || st.isFinished) return null
+
+    const isCorrect = idx === st.currentQuestion.correctIndex
+    const level = LEVELS[st.currentLevelIdx]
+
+    st.questionsAtLevel++
+    st.totalQuestions++
+    if (isCorrect) {
+      st.correctAtLevel++
+      st.totalCorrect++
+    }
+
+    if (!st.levelBreakdown[level]) {
+      st.levelBreakdown[level] = { total: 0, correct: 0 }
+    }
+    st.levelBreakdown[level].total++
+    if (isCorrect) st.levelBreakdown[level].correct++
+
+    st.history.push({
+      level,
+      word: st.currentQuestion.word,
+      correctAnswer: st.currentQuestion.correctAnswer,
+      isCorrect,
+    })
+
+    return { isCorrect }
+  }
+
+  function adaptiveTimeOut() {
+    const st = adaptiveState.value
+    if (!st || st.isFinished) return null
+
+    const level = LEVELS[st.currentLevelIdx]
+    st.questionsAtLevel++
+    st.totalQuestions++
+
+    if (!st.levelBreakdown[level]) {
+      st.levelBreakdown[level] = { total: 0, correct: 0 }
+    }
+    st.levelBreakdown[level].total++
+
+    st.history.push({
+      level,
+      word: st.currentQuestion.word,
+      correctAnswer: st.currentQuestion.correctAnswer,
+      isCorrect: false,
+    })
+
+    return { isCorrect: false }
+  }
+
+  function adaptiveAdvance() {
+    _adaptiveNextQuestion()
+  }
+
+  function _adaptiveFinish() {
+    const st = adaptiveState.value
+    if (!st) return
+
+    if (st.questionsAtLevel > 0 && st.questionsAtLevel < ADAPTIVE_QUESTIONS_PER_ROUND) {
+      const ratio = st.correctAtLevel / st.questionsAtLevel
+      if (ratio >= 0.8) {
+        st.highestPassed = Math.max(st.highestPassed, st.currentLevelIdx)
+      }
+    } else if (st.questionsAtLevel >= ADAPTIVE_QUESTIONS_PER_ROUND) {
+      if (st.correctAtLevel >= ADAPTIVE_PASS_THRESHOLD) {
+        st.highestPassed = Math.max(st.highestPassed, st.currentLevelIdx)
+      }
+    }
+
+    const passedIdx = st.highestPassed
+    const passedLevel = passedIdx >= 0 ? LEVELS[passedIdx] : null
+    const workingTowardsIdx = passedIdx + 1
+    const workingTowards = workingTowardsIdx < LEVELS.length ? LEVELS[workingTowardsIdx] : null
+
+    st.isFinished = true
+    st.result = {
+      passedLevel,
+      passedLevelIdx: passedIdx,
+      workingTowards,
+      totalQuestions: st.totalQuestions,
+      totalCorrect: st.totalCorrect,
+      accuracy: st.totalQuestions > 0 ? Math.round((st.totalCorrect / st.totalQuestions) * 100) : 0,
+      breakdown: { ...st.levelBreakdown },
+    }
+
+    saveAdaptiveResult()
+  }
+
+  function getAdaptiveResult() {
+    return adaptiveState.value?.result || null
+  }
+
+  // ==================== CEFR BEST / HISTORY ====================
+
+  const cefrBest = ref(null)
+
+  async function fetchCefrBest() {
+    if (!myId.value) return
+    try {
+      const profileSnap = await getDoc(doc(db, 'profiles', myId.value))
+      if (profileSnap.exists()) {
+        cefrBest.value = profileSnap.data().cefrBest || null
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveAdaptiveResult() {
+    const result = adaptiveState.value?.result
+    if (!result || !myId.value) return
+
+    try {
+      const resultDoc = {
+        passedLevel: result.passedLevel,
+        passedLevelIdx: result.passedLevelIdx,
+        workingTowards: result.workingTowards,
+        totalQuestions: result.totalQuestions,
+        totalCorrect: result.totalCorrect,
+        accuracy: result.accuracy,
+        breakdown: result.breakdown,
+        createdAt: serverTimestamp(),
+      }
+
+      await addDoc(collection(db, 'profiles', myId.value, 'cefrResults'), resultDoc)
+
+      const currentBest = cefrBest.value
+      const isNewBest = !currentBest || result.passedLevelIdx > currentBest.passedLevelIdx ||
+        (result.passedLevelIdx === currentBest.passedLevelIdx && result.accuracy > currentBest.accuracy)
+
+      if (isNewBest) {
+        const bestData = {
+          passedLevel: result.passedLevel,
+          passedLevelIdx: result.passedLevelIdx,
+          accuracy: result.accuracy,
+          testedAt: new Date().toISOString(),
+        }
+        await updateDoc(doc(db, 'profiles', myId.value), { cefrBest: bestData })
+        cefrBest.value = bestData
+      }
+    } catch { /* ignore */ }
+  }
+
   // ==================== CLEANUP ====================
 
   function cleanup() {
@@ -685,6 +901,7 @@ export const useVocabBattleStore = defineStore('vocabBattle', () => {
     spState.value = null
     mpQuestions.value = []
     mpPendingMyData.value = null
+    adaptiveState.value = null
     loading.value = false
     error.value = null
   }
@@ -697,6 +914,7 @@ export const useVocabBattleStore = defineStore('vocabBattle', () => {
     error,
     spState,
     mpQuestions,
+    adaptiveState,
 
     // Computed
     myId,
@@ -744,6 +962,16 @@ export const useVocabBattleStore = defineStore('vocabBattle', () => {
     addWrongWord,
     removeWrongWord,
     clearAllWrongWords,
+
+    // Adaptive Test
+    adaptiveState,
+    startAdaptiveTest,
+    submitAdaptiveAnswer,
+    adaptiveTimeOut,
+    adaptiveAdvance,
+    getAdaptiveResult,
+    cefrBest,
+    fetchCefrBest,
 
     // General
     cleanup,

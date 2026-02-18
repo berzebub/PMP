@@ -135,92 +135,99 @@
         <!-- Full-screen glow when it's my turn -->
         <div v-if="store.isMyTurn && store.room?.status === 'playing'" class="uno-turn-flash"></div>
 
-        <!-- Turn Info Bar -->
-        <div class="uno-turn-bar" :class="{ 'uno-my-turn': store.isMyTurn, 'uno-my-turn-glow': store.isMyTurn && !mustDrawFirst, 'uno-must-draw': mustDrawFirst }">
-          <div class="uno-turn-icon">{{ mustDrawFirst ? '⚠️' : store.isMyTurn ? '👆' : '⏳' }}</div>
-          <div class="uno-turn-text">
-            <span v-if="mustDrawFirst" class="uno-turn-warning">คุณต้องจั่วไพ่ {{ store.room?.pendingDrawCount }} ใบ!</span>
-            <span v-else-if="store.isMyTurn" class="uno-turn-highlight">ตาของคุณ!</span>
-            <span v-else>ตาของ {{ currentPlayerName }}</span>
-          </div>
-          <div class="uno-direction">
-            <q-icon :name="store.direction === 1 ? 'rotate_right' : 'rotate_left'" size="18px" />
-          </div>
-          <div v-if="store.room?.drawPileCount" class="uno-deck-count">
-            <q-icon name="layers" size="14px" />
-            <span>{{ store.room.drawPileCount }}</span>
-          </div>
-        </div>
-
-        <!-- Last Action Banner -->
-        <div v-if="lastActionText" class="uno-action-banner">
-          <span>{{ lastActionText }}</span>
-        </div>
-
-        <!-- Opponents -->
-        <div class="uno-opponents">
-          <div v-for="pid in opponents" :key="pid" class="uno-opponent"
-               :class="{ 'uno-opponent-active': currentPlayerId === pid, 'uno-opponent-uno': store.room?.players[pid]?.handCount === 1 }">
-            <div class="uno-opponent-avatar">
-              <img v-if="store.room?.players[pid]?.photoURL" :src="store.room.players[pid].photoURL" />
-              <span v-else>{{ (store.room?.players[pid]?.displayName || 'U').charAt(0).toUpperCase() }}</span>
+        <!-- LEFT: Main Area -->
+        <div class="uno-main-area ">
+          <!-- Turn Info Bar -->
+          <div class="uno-turn-bar " :class="{ 'uno-my-turn': store.isMyTurn, 'uno-my-turn-glow': store.isMyTurn && !mustDrawFirst, 'uno-must-draw': mustDrawFirst }">
+            <div class="uno-turn-icon">{{ mustDrawFirst ? '⚠️' : store.isMyTurn ? '👆' : '⏳' }}</div>
+            <div class="uno-turn-text">
+              <span v-if="mustDrawFirst" class="uno-turn-warning">คุณต้องจั่วไพ่ {{ store.room?.pendingDrawCount }} ใบ!</span>
+              <span v-else-if="store.isMyTurn" class="uno-turn-highlight">ตาของคุณ!</span>
+              <span v-else>ตาของ {{ currentPlayerName }}</span>
             </div>
-            <div class="uno-opponent-name">{{ store.room?.players[pid]?.displayName || pid }}</div>
-            <div class="uno-opponent-cards">
-              <div v-for="n in Math.min(store.room?.players[pid]?.handCount || 0, 7)" :key="n"
-                   class="uno-card-back-mini" :style="{ transform: `rotate(${(n - Math.ceil((store.room?.players[pid]?.handCount || 0) / 2)) * 5}deg)` }">
+            <div class="uno-direction">
+              <q-icon :name="store.direction === 1 ? 'rotate_right' : 'rotate_left'" size="18px" />
+            </div>
+            <div v-if="store.room?.drawPileCount" class="uno-deck-count">
+              <q-icon name="layers" size="14px" />
+              <span>{{ store.room.drawPileCount }}</span>
+            </div>
+          </div>
+
+          <!-- Last Action Banner -->
+          <div v-if="lastActionText" class="uno-action-banner">
+            <span>{{ lastActionText }}</span>
+          </div>
+
+          <!-- Circle Area: players around, cards in center -->
+          <div class="uno-circle ">
+            <!-- Player Seats -->
+            <div v-for="(pid, idx) in (store.room?.playerOrder || [])" :key="pid"
+                 class="uno-seat" :style="seatStyle(idx)"
+                 :class="{
+                   'uno-seat-me': pid === store.myId,
+                   'uno-seat-active': currentPlayerId === pid,
+                   'uno-seat-uno': store.room?.players[pid]?.handCount === 1
+                 }">
+              <!-- Turn ring glow -->
+              <div v-if="currentPlayerId === pid" class="uno-seat-turn-ring"></div>
+              <div class="uno-seat-avatar">
+                <img v-if="store.room?.players[pid]?.photoURL" :src="store.room.players[pid].photoURL" />
+                <span v-else>{{ (store.room?.players[pid]?.displayName || 'U').charAt(0).toUpperCase() }}</span>
+              </div>
+              <div class="uno-seat-name" :class="{ 'uno-seat-name-active': currentPlayerId === pid }">
+                {{ shortName(store.room?.players[pid]?.displayName || pid) }}
+              </div>
+              <div class="uno-seat-count" :class="{ 'uno-seat-count-low': (store.room?.players[pid]?.handCount || 0) <= 2 }">
+                {{ store.room?.players[pid]?.handCount || 0 }}
+              </div>
+              <!-- Turn arrow indicator -->
+              <div v-if="currentPlayerId === pid" class="uno-seat-turn-label">TURN</div>
+              <!-- Challenge UNO -->
+              <div v-if="pid !== store.myId && store.room?.players[pid]?.handCount === 1 && !store.room?.players[pid]?.calledUno"
+                   class="uno-challenge-btn" @click="store.challengeUno(pid)">
+                จับ!
               </div>
             </div>
-            <div class="uno-opponent-count">{{ store.room?.players[pid]?.handCount || 0 }} ใบ</div>
-            <div v-if="store.room?.players[pid]?.handCount === 1 && !store.room?.players[pid]?.calledUno"
-                 class="uno-challenge-btn" @click="store.challengeUno(pid)">
-              จับ UNO!
+
+            <!-- Center: Discard + Draw + Color + UNO -->
+            <div class="uno-center">
+              <div class="uno-color-indicator" :style="{ background: currentColorHex }">
+                {{ currentColorName }}
+              </div>
+              <div class="uno-center-cards">
+                <div class="uno-discard" v-if="store.topCard">
+                  <div class="uno-card-large" :class="topCardClass">
+                    <div class="uno-card-value">{{ topCardLabel }}</div>
+                  </div>
+                </div>
+                <div class="uno-draw-pile" :class="{ 'uno-draw-clickable': canDraw }" @click="handleDraw">
+                  <div class="uno-card-back-large">
+                    <div class="uno-card-back-text">UNO</div>
+                  </div>
+                  <div v-if="canDraw" class="uno-draw-hint">จั่วไพ่</div>
+                </div>
+              </div>
+              <!-- UNO Button (in center) -->
+              <button v-if="showUnoButton" class="uno-uno-btn" @click="store.callUno()">
+                UNO!
+              </button>
             </div>
           </div>
-        </div>
 
-        <!-- Table (Discard + Draw) -->
-        <div class="uno-table">
-          <!-- Current Color Indicator -->
-          <div class="uno-color-indicator" :style="{ background: currentColorHex }">
-            {{ currentColorName }}
-          </div>
-
-          <!-- Discard Pile -->
-          <div class="uno-discard" v-if="store.topCard">
-            <div class="uno-card-large" :class="topCardClass">
-              <div class="uno-card-value">{{ topCardLabel }}</div>
-            </div>
-          </div>
-
-          <!-- Draw Pile -->
-          <div class="uno-draw-pile" :class="{ 'uno-draw-clickable': canDraw }" @click="handleDraw">
-            <div class="uno-card-back-large">
-              <div class="uno-card-back-text">UNO</div>
-            </div>
-            <div v-if="canDraw" class="uno-draw-hint">จั่วไพ่</div>
+          <!-- Forced Draw Notice -->
+          <div v-if="store.room?.mustDrawPlayer === store.myId" class="uno-forced-draw">
+            <q-icon name="warning" size="18px" />
+            <span>คุณต้องจั่ว {{ store.room?.pendingDrawCount }} ใบ!</span>
+            <button class="uno-btn uno-btn-primary uno-btn-sm" @click="handleDraw">จั่วเลย</button>
           </div>
         </div>
 
-        <!-- Forced Draw Notice -->
-        <div v-if="store.room?.mustDrawPlayer === store.myId" class="uno-forced-draw">
-          <q-icon name="warning" size="18px" />
-          <span>คุณต้องจั่ว {{ store.room?.pendingDrawCount }} ใบ!</span>
-          <button class="uno-btn uno-btn-primary uno-btn-sm" @click="handleDraw">จั่วเลย</button>
-        </div>
-
-        <!-- UNO Button -->
-        <div v-if="showUnoButton" class="uno-call-section">
-          <button class="uno-uno-btn" @click="store.callUno()">
-            UNO!
-          </button>
-        </div>
-
-        <!-- My Hand -->
-        <div class="uno-hand-section">
+        <!-- RIGHT: Hand Panel -->
+        <div class="uno-right-panel">
           <div class="uno-hand-label">
             <q-icon name="back_hand" size="16px" />
-            <span>ไพ่ของคุณ ({{ store.myHand.length }} ใบ)</span>
+            <span>ไพ่ของคุณ ({{ store.myHand.length }})</span>
           </div>
           <div class="uno-hand">
             <div v-for="(card, idx) in store.myHand" :key="card.id"
@@ -325,11 +332,6 @@ const allReady = computed(() => {
     if (pid !== store.room.hostId && !p.isReady) return false
   }
   return true
-})
-
-const opponents = computed(() => {
-  const order = store.room?.playerOrder || []
-  return order.filter(pid => pid !== store.myId)
 })
 
 const currentPlayerId = computed(() => store.currentPlayerId)
@@ -493,14 +495,30 @@ function confirmColorChoice(color) {
 function handleDraw() {
   store.drawCard()
 }
+
+function seatStyle(idx) {
+  const total = store.room?.playerOrder?.length || 1
+  const angle = (idx / total) * 2 * Math.PI - Math.PI / 2
+  const rx = 42
+  const ry = 42
+  return {
+    left: `calc(50% + ${Math.cos(angle) * rx}% - 28px)`,
+    top: `calc(50% + ${Math.sin(angle) * ry}% - 28px)`
+  }
+}
+
+function shortName(name) {
+  if (!name) return '?'
+  return name.length > 6 ? name.substring(0, 5) + '..' : name
+}
 </script>
 
 <style scoped>
-.uno-page { padding: 24px; min-height: 100vh; }
-.uno-container { max-width: 900px; margin: 0 auto; }
+.uno-page { padding: 16px 20px; min-height: 100vh; }
+.uno-container { max-width: 1100px; margin: 0 auto; }
 
 /* ====== Header ====== */
-.uno-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.uno-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .uno-back-btn {
   display: flex; align-items: center; gap: 6px;
   background: rgba(58,59,62,0.3); border: 1px solid rgba(58,59,62,0.3);
@@ -597,7 +615,7 @@ function handleDraw() {
 .uno-waiting-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ====== Game View ====== */
-.uno-game { display: flex; flex-direction: column; gap: 12px; position: relative; }
+.uno-game { display: flex; gap: 14px; position: relative; }
 
 /* Full-screen edge glow overlay (infinite pulse) */
 .uno-turn-flash {
@@ -606,18 +624,17 @@ function handleDraw() {
   animation: unoEdgeGlow 2s ease-in-out infinite;
 }
 @keyframes unoEdgeGlow {
-  0%, 100% {
-    box-shadow: inset 0 0 40px 10px rgba(255,0,110,0.25);
-  }
-  50% {
-    box-shadow: inset 0 0 80px 24px rgba(255,0,110,0.55);
-  }
+  0%, 100% { box-shadow: inset 0 0 40px 10px rgba(255,0,110,0.25); }
+  50%      { box-shadow: inset 0 0 80px 24px rgba(255,0,110,0.55); }
 }
+
+/* Main Area (left) */
+.uno-main-area { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 
 /* Turn Bar */
 .uno-turn-bar {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  border-radius: 12px; background: rgba(58,59,62,0.2); border: 1px solid rgba(58,59,62,0.3);
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-radius: 10px; background: rgba(58,59,62,0.2); border: 1px solid rgba(58,59,62,0.3);
   transition: all 0.3s; position: relative; overflow: hidden;
 }
 .uno-my-turn { background: rgba(255,152,0,0.1); border-color: rgba(255,152,0,0.3); }
@@ -629,8 +646,8 @@ function handleDraw() {
   0%, 100% { box-shadow: 0 0 12px rgba(255,152,0,0.15), inset 0 0 12px rgba(255,152,0,0.03); border-color: rgba(255,152,0,0.3); }
   50%      { box-shadow: 0 0 24px rgba(255,152,0,0.35), inset 0 0 20px rgba(255,152,0,0.08); border-color: rgba(255,152,0,0.5); }
 }
-.uno-turn-icon { font-size: 1.2rem; }
-.uno-turn-text { font-size: 0.88rem; font-weight: 600; color: #e0e1e4; flex: 1; }
+.uno-turn-icon { font-size: 1rem; }
+.uno-turn-text { font-size: 0.82rem; font-weight: 600; color: #e0e1e4; flex: 1; }
 .uno-turn-highlight { color: #ff9800; animation: unoTextPulse 2s ease-in-out infinite; }
 @keyframes unoTextPulse {
   0%, 100% { opacity: 1; }
@@ -650,42 +667,70 @@ function handleDraw() {
 
 /* Action Banner */
 .uno-action-banner {
-  padding: 8px 14px; background: rgba(255,152,0,0.08); border-radius: 8px;
-  font-size: 0.78rem; color: #ffb74d; text-align: center;
+  padding: 5px 12px; background: rgba(255,152,0,0.08); border-radius: 8px;
+  font-size: 0.72rem; color: #ffb74d; text-align: center;
   animation: unoBannerIn 0.3s ease-out;
 }
 @keyframes unoBannerIn { 0% { opacity: 0; transform: translateY(-6px); } 100% { opacity: 1; transform: translateY(0); } }
 
-/* Opponents */
-.uno-opponents {
-  display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+/* ====== Circle Area ====== */
+.uno-circle {
+  position: relative; width: 100%; height: 380px;
+  flex-shrink: 0; margin: 30px auto 0;
 }
-.uno-opponent {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 14px; background: #23242a; border-radius: 12px;
-  border: 1px solid rgba(58,59,62,0.3); min-width: 80px; position: relative;
-  transition: all 0.2s;
+
+/* Player Seats */
+.uno-seat {
+  position: absolute; width: 56px; text-align: center;
+  z-index: 2; transition: all 0.2s;
 }
-.uno-opponent-active { border-color: rgba(255,152,0,0.5); background: rgba(255,152,0,0.05); }
-.uno-opponent-uno { border-color: rgba(239,83,80,0.5); }
-.uno-opponent-avatar {
-  width: 36px; height: 36px; border-radius: 50%; background: #2a2b2e;
-  display: flex; align-items: center; justify-content: center; font-size: 0.78rem;
-  font-weight: 600; color: #9e9fa3; overflow: hidden;
+.uno-seat-avatar {
+  width: 36px; height: 36px; border-radius: 50%; background: #2a2b2e; margin: 0 auto;
+  display: flex; align-items: center; justify-content: center; font-size: 0.76rem;
+  font-weight: 600; color: #9e9fa3; overflow: hidden; position: relative;
+  border: 2px solid rgba(58,59,62,0.5); transition: all 0.2s;
 }
-.uno-opponent-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.uno-opponent-name { font-size: 0.68rem; color: #9e9fa3; font-weight: 600; max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.uno-opponent-cards { display: flex; justify-content: center; height: 24px; position: relative; width: 50px; }
-.uno-card-back-mini {
-  width: 16px; height: 24px; background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border: 1px solid rgba(255,152,0,0.3); border-radius: 3px; position: absolute;
-  left: 50%; margin-left: -8px;
+.uno-seat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.uno-seat-me .uno-seat-avatar { border-color: rgba(66,165,245,0.6); }
+.uno-seat-active .uno-seat-avatar { border-color: #ff9800; }
+.uno-seat-name {
+  font-size: 0.6rem; color: #9e9fa3; font-weight: 600; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.uno-opponent-count { font-size: 0.68rem; color: #ffb74d; font-weight: 700; }
+.uno-seat-name-active { color: #ff9800; font-weight: 700; }
+.uno-seat-count {
+  font-size: 0.62rem; color: #6b6c6f; font-weight: 700;
+  background: rgba(58,59,62,0.4); border-radius: 8px; padding: 0 5px;
+  display: inline-block; margin-top: 1px;
+}
+.uno-seat-count-low { color: #ffb74d; background: rgba(255,152,0,0.15); }
+.uno-seat-uno .uno-seat-avatar { border-color: #ef5350; }
+.uno-seat-uno .uno-seat-count { color: #ef5350; background: rgba(239,83,80,0.15); }
+
+/* Turn ring glow around active player */
+.uno-seat-turn-ring {
+  position: absolute; inset: -6px; border-radius: 50%; z-index: -1;
+  border: 2px solid rgba(255,152,0,0.6);
+  box-shadow: 0 0 14px 4px rgba(255,152,0,0.35);
+  animation: unoTurnRing 1.8s ease-in-out infinite;
+}
+@keyframes unoTurnRing {
+  0%, 100% { box-shadow: 0 0 10px 2px rgba(255,152,0,0.25); border-color: rgba(255,152,0,0.5); }
+  50%      { box-shadow: 0 0 20px 6px rgba(255,152,0,0.5); border-color: rgba(255,152,0,0.8); }
+}
+.uno-seat-turn-label {
+  position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+  font-size: 0.5rem; font-weight: 800; color: #ff9800;
+  background: rgba(255,152,0,0.2); padding: 1px 6px; border-radius: 6px;
+  letter-spacing: 0.08em; white-space: nowrap;
+  animation: unoTextPulse 1.5s ease-in-out infinite;
+}
+
+/* Challenge button */
 .uno-challenge-btn {
-  position: absolute; top: -6px; right: -6px;
-  background: #ef5350; color: #fff; font-size: 0.6rem; font-weight: 700;
-  padding: 2px 8px; border-radius: 8px; cursor: pointer;
+  position: absolute; top: -6px; right: -8px;
+  background: #ef5350; color: #fff; font-size: 0.55rem; font-weight: 700;
+  padding: 2px 6px; border-radius: 8px; cursor: pointer; z-index: 3;
   animation: unoPulse 1.5s ease-in-out infinite;
 }
 @keyframes unoPulse {
@@ -693,47 +738,52 @@ function handleDraw() {
   50% { transform: scale(1.1); }
 }
 
-/* Table */
-.uno-table {
-  display: flex; align-items: center; justify-content: center; gap: 24px;
-  padding: 20px; position: relative;
+/* ====== Center (discard + draw) ====== */
+.uno-center {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 1;
 }
-
 .uno-color-indicator {
-  position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
-  padding: 2px 14px; border-radius: 12px; font-size: 0.7rem; font-weight: 700;
+  padding: 2px 14px; border-radius: 12px; font-size: 0.65rem; font-weight: 700;
   color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
-
-/* Discard */
+.uno-center-cards { display: flex; gap: 10px; align-items: center; }
 .uno-discard { position: relative; }
-
-/* Cards */
 .uno-card-large {
-  width: 80px; height: 120px; border-radius: 12px;
+  width: 54px; height: 80px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.8rem; font-weight: 900; color: #fff;
+  font-size: 1.3rem; font-weight: 900; color: #fff;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  border: 3px solid rgba(255,255,255,0.2);
+  border: 2px solid rgba(255,255,255,0.2);
 }
 .uno-card-back-large {
-  width: 80px; height: 120px; border-radius: 12px;
+  width: 54px; height: 80px; border-radius: 10px;
   background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border: 3px solid rgba(255,152,0,0.3);
+  border: 2px solid rgba(255,152,0,0.3);
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 .uno-card-back-text {
-  font-size: 1rem; font-weight: 900; color: #ff9800;
+  font-size: 0.8rem; font-weight: 900; color: #ff9800;
   transform: rotate(-20deg);
   text-shadow: 0 0 8px rgba(255,152,0,0.5);
 }
-
 .uno-draw-pile { cursor: default; text-align: center; }
 .uno-draw-clickable { cursor: pointer; }
-.uno-draw-clickable:hover .uno-card-back-large { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(255,152,0,0.3); }
-.uno-draw-hint { font-size: 0.72rem; color: #ff9800; font-weight: 600; margin-top: 6px; }
+.uno-draw-clickable:hover .uno-card-back-large { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(255,152,0,0.3); }
+.uno-draw-hint { font-size: 0.65rem; color: #ff9800; font-weight: 600; margin-top: 4px; }
+
+/* UNO Button (in center) */
+.uno-uno-btn {
+  background: linear-gradient(135deg, #ef5350, #ff5722); color: #fff;
+  font-size: 0.9rem; font-weight: 900; padding: 6px 20px; border: none;
+  border-radius: 50px; cursor: pointer; letter-spacing: 0.1em;
+  box-shadow: 0 4px 16px rgba(239,83,80,0.4);
+  animation: unoPulse 1.5s ease-in-out infinite;
+  transition: all 0.15s; margin-top: 2px;
+}
+.uno-uno-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(239,83,80,0.5); }
 
 /* Forced Draw */
 .uno-forced-draw {
@@ -742,32 +792,27 @@ function handleDraw() {
   border-radius: 10px; font-size: 0.82rem; font-weight: 600; color: #ef5350;
 }
 
-/* UNO Call */
-.uno-call-section { display: flex; justify-content: center; }
-.uno-uno-btn {
-  background: linear-gradient(135deg, #ef5350, #ff5722); color: #fff;
-  font-size: 1.4rem; font-weight: 900; padding: 12px 40px; border: none;
-  border-radius: 50px; cursor: pointer; letter-spacing: 0.1em;
-  box-shadow: 0 4px 20px rgba(239,83,80,0.4);
-  animation: unoPulse 1.5s ease-in-out infinite;
-  transition: all 0.15s;
-}
-.uno-uno-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(239,83,80,0.5); }
-
-/* My Hand */
-.uno-hand-section {
-  background: #23242a; border-radius: 14px; padding: 14px;
+/* ====== Right Panel (My Hand) ====== */
+.uno-right-panel {
+  width: 148px; min-width: 148px;
+  background: #23242a; border-radius: 14px; padding: 10px;
   border: 1px solid rgba(58,59,62,0.3);
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 100px); overflow: hidden;
 }
 .uno-hand-label {
   display: flex; align-items: center; gap: 6px;
-  font-size: 0.78rem; font-weight: 600; color: #9e9fa3; margin-bottom: 10px;
+  font-size: 0.75rem; font-weight: 600; color: #9e9fa3; margin-bottom: 8px;
+  flex-shrink: 0;
 }
 .uno-hand {
-  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; justify-items: center;
+  overflow-y: auto; flex: 1; padding-right: 2px;
 }
+.uno-hand::-webkit-scrollbar { width: 3px; }
+.uno-hand::-webkit-scrollbar-thumb { background: rgba(255,152,0,0.3); border-radius: 3px; }
 .uno-card {
-  width: 52px; height: 78px; border-radius: 8px;
+  width: 56px; height: 78px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 1.1rem; font-weight: 800; color: #fff;
   cursor: pointer; transition: all 0.15s;
@@ -776,7 +821,7 @@ function handleDraw() {
   text-shadow: 0 1px 3px rgba(0,0,0,0.3);
   position: relative;
 }
-.uno-card-playable:hover { transform: translateY(-8px); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+.uno-card-playable:hover { transform: scale(1.08); box-shadow: 0 6px 18px rgba(0,0,0,0.3); }
 .uno-card-disabled { opacity: 0.45; cursor: not-allowed; }
 .uno-card-label { pointer-events: none; }
 
@@ -833,14 +878,23 @@ function handleDraw() {
 .uno-gameover-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
 /* ====== Responsive ====== */
-@media (max-width: 600px) {
-  .uno-page { padding: 14px; }
+@media (max-width: 768px) {
+  .uno-page { padding: 10px; }
   .uno-header { flex-wrap: wrap; gap: 8px; }
+  .uno-container { max-width: 100%; }
+  .uno-game { flex-direction: column; }
+  .uno-right-panel {
+    width: 100%; min-width: unset; flex-direction: column;
+    max-height: none; border-radius: 12px;
+  }
+  .uno-hand { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; overflow-y: visible; }
+  .uno-circle { height: 300px; }
   .uno-card { width: 44px; height: 66px; font-size: 0.9rem; }
-  .uno-card-large { width: 64px; height: 96px; font-size: 1.4rem; }
-  .uno-card-back-large { width: 64px; height: 96px; }
-  .uno-opponents { gap: 6px; }
-  .uno-opponent { padding: 8px 10px; min-width: 68px; }
+  .uno-card-large { width: 46px; height: 68px; font-size: 1rem; }
+  .uno-card-back-large { width: 46px; height: 68px; }
+  .uno-seat { width: 46px; }
+  .uno-seat-avatar { width: 30px; height: 30px; font-size: 0.65rem; }
+  .uno-seat-name { font-size: 0.52rem; }
   .uno-lobby-actions { flex-direction: column; align-items: center; }
 }
 </style>

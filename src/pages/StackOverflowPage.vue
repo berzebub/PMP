@@ -21,11 +21,13 @@
         </div>
 
         <!-- Canvas Wrapper -->
-        <div class="stack-canvas-wrapper" ref="canvasWrapper">
+        <div class="stack-canvas-wrapper" ref="canvasWrapper"
+             :style="{ height: (canvasHeight * canvasScale) + 'px' }">
           <canvas
             ref="gameCanvas"
             :width="canvasWidth"
             :height="canvasHeight"
+            :style="{ transform: 'scale(' + canvasScale + ')', transformOrigin: 'top left' }"
             @click="handleCanvasClick"
             @touchstart.prevent="handleTouchStart"
           ></canvas>
@@ -171,6 +173,8 @@ const SETTLE_FRAMES_REQUIRED = 25
 const SETTLE_MAX_WAIT = 180 // 3 seconds
 const PERFECT_THRESHOLD = 12
 const SNAP_THRESHOLD = 30 // Magnetic snap range (px)
+const DESIGN_WIDTH = 1200
+const DESIGN_HEIGHT = 500
 
 const BLOCK_TYPES = [
   { name: 'document', width: 110, height: 22, color: '#5c9ce6', emoji: '📄', density: 0.001, label: 'Document' },
@@ -187,8 +191,9 @@ const authStore = useAuthStore()
 
 const gameCanvas = ref(null)
 const canvasWrapper = ref(null)
-const canvasWidth = ref(1200)
-const canvasHeight = ref(500)
+const canvasWidth = ref(DESIGN_WIDTH)
+const canvasHeight = ref(DESIGN_HEIGHT)
+const canvasScale = ref(1)
 
 const gameState = ref('idle')
 const displayScore = ref(0)
@@ -910,12 +915,20 @@ async function endGame() {
 
 // ==================== CANVAS SETUP ====================
 
+function updateCanvasScale() {
+  const wrapper = canvasWrapper.value
+  if (!wrapper) return
+  const wrapperWidth = wrapper.clientWidth - 4
+  canvasScale.value = Math.min(1, wrapperWidth / DESIGN_WIDTH)
+}
+
 function initCanvas() {
   const wrapper = canvasWrapper.value
   if (!wrapper) return
 
-  canvasWidth.value = wrapper.clientWidth - 4
-  canvasHeight.value = Math.max(350, Math.min(550, Math.floor(canvasWidth.value * 0.42)))
+  canvasWidth.value = DESIGN_WIDTH
+  canvasHeight.value = DESIGN_HEIGHT
+  updateCanvasScale()
 
   nextTick(() => {
     const canvas = gameCanvas.value
@@ -949,15 +962,7 @@ function renderIdleScreen() {
 }
 
 function handleResize() {
-  const wrapper = canvasWrapper.value
-  if (!wrapper) return
-
-  canvasWidth.value = wrapper.clientWidth - 4
-  canvasHeight.value = Math.max(350, Math.min(550, Math.floor(canvasWidth.value * 0.42)))
-
-  nextTick(() => {
-    if (gameState.value === 'idle') renderIdleScreen()
-  })
+  updateCanvasScale()
 }
 
 // ==================== LIFECYCLE ====================
@@ -1064,8 +1069,6 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(58, 59, 62, 0.3);
-  display: flex;
-  justify-content: center;
 }
 
 .stack-canvas-wrapper canvas {

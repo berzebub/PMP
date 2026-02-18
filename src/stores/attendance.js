@@ -9,6 +9,7 @@ import {
   query,
   where,
   writeBatch,
+  updateDoc,
   Timestamp
 } from 'firebase/firestore'
 import { db } from 'boot/firebase'
@@ -184,6 +185,79 @@ export const useAttendanceStore = defineStore('attendance', () => {
     }
   }
 
+  /**
+   * Update an existing attendance record (HR edit)
+   */
+  const updateRecord = async (docId, { punchIn, punchOut, note, editedBy }) => {
+    try {
+      await updateDoc(doc(db, 'attendance', docId), {
+        punchIn: punchIn || null,
+        punchOut: punchOut || null,
+        note: note || '',
+        editedBy: editedBy || '',
+        editedAt: Timestamp.now()
+      })
+      return true
+    } catch (err) {
+      console.error('Error updating attendance record:', err)
+      return false
+    }
+  }
+
+  /**
+   * Create a manual attendance record (HR adding entry for a day with no scan)
+   */
+  const upsertRecord = async (data) => {
+    try {
+      await addDoc(collection(db, 'attendance'), {
+        userId: data.userId,
+        userName: data.userName || '',
+        punchId: '',
+        date: data.date,
+        punchIn: data.punchIn || null,
+        punchOut: data.punchOut || null,
+        note: data.note || '',
+        department: data.department || '',
+        shift: '',
+        importMonth: data.importMonth || '',
+        importedAt: Timestamp.now(),
+        importedBy: '',
+        editedBy: data.editedBy || '',
+        editedAt: Timestamp.now(),
+        isManual: true
+      })
+      return true
+    } catch (err) {
+      console.error('Error creating manual attendance record:', err)
+      return false
+    }
+  }
+
+  /**
+   * Fetch leave records for a specific user that overlap with a given month
+   */
+  const fetchUserLeaves = async (userId, yearMonth) => {
+    try {
+      const [y, m] = yearMonth.split('-').map(Number)
+      const monthStart = `${y}-${String(m).padStart(2, '0')}-01`
+      const daysInMonth = new Date(y, m, 0).getDate()
+      const monthEnd = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+
+      const q = query(
+        collection(db, 'leaves'),
+        where('userId', '==', userId),
+        where('status', 'in', ['approved', 'pending_head', 'pending_hr'])
+      )
+      const snap = await getDocs(q)
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(l => l.startDate <= monthEnd && l.endDate >= monthStart)
+    } catch (err) {
+      console.error('Error fetching user leaves:', err)
+      return []
+    }
+  }
+
   return {
     loading,
     records,
@@ -192,6 +266,9 @@ export const useAttendanceStore = defineStore('attendance', () => {
     deleteMonthAttendance,
     importAttendance,
     fetchMonthlyAttendance,
-    fetchAllMonthlyAttendance
+    fetchAllMonthlyAttendance,
+    updateRecord,
+    upsertRecord,
+    fetchUserLeaves
   }
 })

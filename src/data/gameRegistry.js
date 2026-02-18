@@ -16,7 +16,8 @@ export const games = [
     route: '/games/dino-runner',
     difficulty: 'ง่าย',
     controls: 'Space / Tap',
-    available: true
+    available: true,
+    mode: 'single'
   },
   {
     id: 'hallway-herding',
@@ -28,7 +29,8 @@ export const games = [
     route: '/games/hallway-herding',
     difficulty: 'ปานกลาง',
     controls: 'Click / Tap',
-    available: true
+    available: true,
+    mode: 'single'
   },
   {
     id: 'stack-overflow',
@@ -40,7 +42,8 @@ export const games = [
     route: '/games/stack-overflow',
     difficulty: 'ง่าย',
     controls: 'Click / Tap',
-    available: true
+    available: true,
+    mode: 'single'
   },
   {
     id: 'werewolf',
@@ -53,7 +56,8 @@ export const games = [
     difficulty: 'ปานกลาง',
     controls: 'Chat / Vote',
     available: true,
-    noLeaderboard: true
+    noLeaderboard: true,
+    mode: 'multi'
   },
   {
     id: 'uno',
@@ -66,7 +70,8 @@ export const games = [
     difficulty: 'ง่าย',
     controls: 'Tap / Click',
     available: true,
-    noLeaderboard: true
+    noLeaderboard: true,
+    mode: 'multi'
   },
   {
     id: 'vocab-battle',
@@ -78,7 +83,8 @@ export const games = [
     route: '/games/vocab-battle',
     difficulty: 'ปานกลาง',
     controls: 'Tap / Click',
-    available: true
+    available: true,
+    mode: 'both'
   }
   // เพิ่มเกมใหม่ได้ที่นี่ เช่น:
   // {

@@ -60,6 +60,18 @@
               <div v-if="exp.note" class="exp-manage-note">
                 <q-icon name="notes" size="12px" /> {{ exp.note }}
               </div>
+              <div v-if="exp.receiveMethod" class="exp-manage-note" style="color: #42a5f5;">
+                <q-icon :name="exp.receiveMethod === 'promptpay' ? 'qr_code' : exp.receiveMethod === 'transfer' ? 'account_balance' : 'payments'" size="12px" />
+                <template v-if="exp.receiveMethod === 'promptpay'">
+                  PromptPay {{ exp.promptPayPhone }} ({{ exp.accountName || '-' }})
+                </template>
+                <template v-else-if="exp.receiveMethod === 'transfer'">
+                  {{ exp.bankName }} {{ exp.accountNumber }} ({{ exp.accountName || '-' }})
+                </template>
+                <template v-else>
+                  รับเงินสด
+                </template>
+              </div>
             </div>
 
             <!-- Status & Actions -->
@@ -182,6 +194,62 @@
             <div class="exp-total-row">
               <span class="exp-total-label">ยอดรวมทั้งสิ้น</span>
               <span class="exp-total-value">{{ formatMoney(totalAmount) }} ฿</span>
+            </div>
+
+            <!-- Receive Method -->
+            <div class="exp-bank-section">
+              <div class="exp-bank-header">
+                <q-icon name="account_balance" size="14px" style="color: #42a5f5;" />
+                <span>วิธีรับเงิน</span>
+              </div>
+              <div class="exp-receive-methods">
+                <label class="exp-receive-option" :class="{ 'exp-receive-active': formReceiveMethod === 'promptpay' }">
+                  <input type="radio" v-model="formReceiveMethod" value="promptpay" class="exp-radio" />
+                  <q-icon name="qr_code" size="16px" />
+                  <span>PromptPay</span>
+                </label>
+                <label class="exp-receive-option" :class="{ 'exp-receive-active': formReceiveMethod === 'transfer' }">
+                  <input type="radio" v-model="formReceiveMethod" value="transfer" class="exp-radio" />
+                  <q-icon name="account_balance" size="16px" />
+                  <span>โอนผ่านธนาคาร</span>
+                </label>
+                <label class="exp-receive-option" :class="{ 'exp-receive-active': formReceiveMethod === 'cash' }">
+                  <input type="radio" v-model="formReceiveMethod" value="cash" class="exp-radio" />
+                  <q-icon name="payments" size="16px" />
+                  <span>เงินสด</span>
+                </label>
+              </div>
+
+              <!-- PromptPay fields -->
+              <div v-if="formReceiveMethod === 'promptpay'" class="exp-form-row q-mt-sm">
+                <div class="exp-field">
+                  <label class="exp-field-label">เบอร์โทรศัพท์ PromptPay</label>
+                  <input v-model="formPromptPayPhone" class="exp-input" placeholder="0xx-xxx-xxxx" maxlength="15" />
+                </div>
+                <div class="exp-field">
+                  <label class="exp-field-label">ชื่อบัญชี</label>
+                  <input v-model="formAccountName" class="exp-input" placeholder="ชื่อ-นามสกุล" maxlength="100" />
+                </div>
+              </div>
+
+              <!-- Bank transfer fields -->
+              <div v-if="formReceiveMethod === 'transfer'" class="exp-form-row exp-form-row-3 q-mt-sm">
+                <div class="exp-field">
+                  <label class="exp-field-label">ธนาคาร</label>
+                  <select v-model="formBankName" class="exp-input exp-select">
+                    <option value="">-- เลือกธนาคาร --</option>
+                    <option v-for="b in bankOptions" :key="b" :value="b">{{ b }}</option>
+                  </select>
+                </div>
+                <div class="exp-field">
+                  <label class="exp-field-label">เลขที่บัญชี</label>
+                  <input v-model="formAccountNumber" class="exp-input" placeholder="xxx-x-xxxxx-x" maxlength="20" />
+                </div>
+                <div class="exp-field">
+                  <label class="exp-field-label">ชื่อเจ้าของบัญชี</label>
+                  <input v-model="formAccountName" class="exp-input" placeholder="ชื่อ-นามสกุล" maxlength="100" />
+                </div>
+              </div>
             </div>
 
             <!-- Note -->
@@ -327,6 +395,24 @@
             <strong>หมายเหตุ:</strong> {{ detailExpense.note }}
           </div>
 
+          <div v-if="detailExpense.receiveMethod" class="exp-detail-bank">
+            <q-icon :name="detailExpense.receiveMethod === 'promptpay' ? 'qr_code' : detailExpense.receiveMethod === 'transfer' ? 'account_balance' : 'payments'" size="14px" style="color: #42a5f5;" />
+            <div>
+              <div class="exp-detail-bank-label">วิธีรับเงิน</div>
+              <template v-if="detailExpense.receiveMethod === 'promptpay'">
+                <div>PromptPay {{ detailExpense.promptPayPhone }}</div>
+                <div v-if="detailExpense.accountName" style="color: #6b6c6f;">{{ detailExpense.accountName }}</div>
+              </template>
+              <template v-else-if="detailExpense.receiveMethod === 'transfer'">
+                <div>{{ detailExpense.bankName }} {{ detailExpense.accountNumber }}</div>
+                <div v-if="detailExpense.accountName" style="color: #6b6c6f;">{{ detailExpense.accountName }}</div>
+              </template>
+              <template v-else>
+                <div>รับเงินสด</div>
+              </template>
+            </div>
+          </div>
+
           <!-- Approval trail -->
           <div v-if="detailExpense.hrReviewedByName" class="exp-trail">
             <q-icon name="badge" size="13px" style="color: #ce93d8;" />
@@ -397,6 +483,46 @@
           <div class="exp-pay-info">
             <span>{{ payingExpense.firstName }} {{ payingExpense.lastName }}</span>
             <span class="exp-pay-amount">{{ formatMoney(payingExpense.totalAmount) }} ฿</span>
+          </div>
+
+          <div v-if="payingExpense.receiveMethod || payingExpense.bankName || payingExpense.accountNumber || payingExpense.promptPayPhone" class="exp-pay-bank-info">
+            <q-icon :name="payingExpense.receiveMethod === 'promptpay' ? 'qr_code' : payingExpense.receiveMethod === 'transfer' || payingExpense.bankName ? 'account_balance' : 'payments'" size="16px" style="color: #42a5f5;" />
+            <div style="flex: 1;">
+              <div style="font-size: 0.65rem; color: #6b6c6f; margin-bottom: 4px;">ผู้ขอเบิกต้องการรับเงินผ่าน</div>
+              <template v-if="payingExpense.receiveMethod === 'promptpay'">
+                <div style="font-weight: 700; font-size: 0.82rem;">PromptPay</div>
+                <div class="exp-pay-bank-detail">
+                  <span>เบอร์โทร:</span>
+                  <strong>{{ payingExpense.promptPayPhone || '-' }}</strong>
+                </div>
+                <div v-if="payingExpense.accountName" class="exp-pay-bank-detail">
+                  <span>ชื่อบัญชี:</span>
+                  <strong>{{ payingExpense.accountName }}</strong>
+                </div>
+              </template>
+              <template v-else-if="payingExpense.receiveMethod === 'transfer' || payingExpense.bankName">
+                <div style="font-weight: 700; font-size: 0.82rem;">โอนผ่านธนาคาร</div>
+                <div v-if="payingExpense.bankName" class="exp-pay-bank-detail">
+                  <span>ธนาคาร:</span>
+                  <strong>{{ payingExpense.bankName }}</strong>
+                </div>
+                <div v-if="payingExpense.accountNumber" class="exp-pay-bank-detail">
+                  <span>เลขที่บัญชี:</span>
+                  <strong>{{ payingExpense.accountNumber }}</strong>
+                </div>
+                <div v-if="payingExpense.accountName" class="exp-pay-bank-detail">
+                  <span>ชื่อบัญชี:</span>
+                  <strong>{{ payingExpense.accountName }}</strong>
+                </div>
+              </template>
+              <template v-else-if="payingExpense.receiveMethod === 'cash'">
+                <div style="font-weight: 700; font-size: 0.82rem;">รับเงินสด</div>
+              </template>
+            </div>
+          </div>
+          <div v-else class="exp-pay-bank-info" style="border-color: rgba(255, 183, 77, 0.2); background: rgba(255, 183, 77, 0.04);">
+            <q-icon name="info" size="14px" style="color: #ffb74d;" />
+            <div style="font-size: 0.72rem; color: #9ca3af;">ผู้ขอเบิกไม่ได้ระบุวิธีรับเงิน</div>
           </div>
 
           <label class="exp-field-label">วิธีจ่ายเงิน <span class="exp-required">*</span></label>
@@ -534,6 +660,19 @@
           <strong>หมายเหตุ:</strong> {{ printData.note }}
         </div>
 
+        <div v-if="printData.receiveMethod" class="exp-print-note">
+          <strong>วิธีรับเงิน:</strong>
+          <template v-if="printData.receiveMethod === 'promptpay'">
+            PromptPay {{ printData.promptPayPhone }}
+            <span v-if="printData.accountName"> ({{ printData.accountName }})</span>
+          </template>
+          <template v-else-if="printData.receiveMethod === 'transfer'">
+            {{ printData.bankName }} {{ printData.accountNumber }}
+            <span v-if="printData.accountName"> ({{ printData.accountName }})</span>
+          </template>
+          <template v-else>เงินสด</template>
+        </div>
+
         <div class="exp-print-signatures">
           <div class="exp-print-sig">
             <div class="exp-print-sig-line"></div>
@@ -575,6 +714,27 @@ const formError = ref('')
 const formItems = ref([{ description: '', amount: null }])
 const formNote = ref('')
 const receiptFiles = ref({})
+const formReceiveMethod = ref('')
+const formPromptPayPhone = ref('')
+const formBankName = ref('')
+const formAccountNumber = ref('')
+const formAccountName = ref('')
+
+const bankOptions = [
+  'กสิกรไทย (KBANK)',
+  'กรุงเทพ (BBL)',
+  'ไทยพาณิชย์ (SCB)',
+  'กรุงไทย (KTB)',
+  'กรุงศรีอยุธยา (BAY)',
+  'ทหารไทยธนชาต (TTB)',
+  'ออมสิน (GSB)',
+  'ธ.ก.ส. (BAAC)',
+  'ซีไอเอ็มบี ไทย (CIMBT)',
+  'ยูโอบี (UOB)',
+  'แลนด์ แอนด์ เฮ้าส์ (LHBANK)',
+  'เกียรตินาคินภัทร (KKP)',
+  'อื่นๆ'
+]
 
 // Dialogs
 const showDetailDialog = ref(false)
@@ -674,7 +834,12 @@ const handleSubmit = async () => {
   const result = await expenseStore.submitExpense({
     items: formItems.value,
     note: formNote.value,
-    receiptFiles: receiptFiles.value
+    receiptFiles: receiptFiles.value,
+    receiveMethod: formReceiveMethod.value,
+    promptPayPhone: formReceiveMethod.value === 'promptpay' ? formPromptPayPhone.value : '',
+    bankName: formReceiveMethod.value === 'transfer' ? formBankName.value : '',
+    accountNumber: formReceiveMethod.value === 'transfer' ? formAccountNumber.value : '',
+    accountName: formReceiveMethod.value !== 'cash' ? formAccountName.value : ''
   })
 
   if (result) {
@@ -697,6 +862,10 @@ const handleSubmit = async () => {
     } catch (e) {
       console.error('Error sending expense notification:', e)
     }
+
+    if (showManageSection.value) {
+      await expenseStore.fetchPendingExpenses()
+    }
   } else {
     formError.value = 'เกิดข้อผิดพลาด กรุณาลองใหม่'
   }
@@ -707,6 +876,11 @@ const resetForm = () => {
   formItems.value = [{ description: '', amount: null }]
   formNote.value = ''
   receiptFiles.value = {}
+  formReceiveMethod.value = ''
+  formPromptPayPhone.value = ''
+  formBankName.value = ''
+  formAccountNumber.value = ''
+  formAccountName.value = ''
   formError.value = ''
 }
 
@@ -935,6 +1109,11 @@ const exportToExcel = () => {
         'จำนวนเงิน': item.amount,
         'ยอดรวมทั้งใบ': exp.totalAmount,
         'สถานะ': statusInfo.label,
+        'วิธีรับเงิน': exp.receiveMethod === 'promptpay' ? 'PromptPay' : exp.receiveMethod === 'transfer' ? 'โอนธนาคาร' : exp.receiveMethod === 'cash' ? 'เงินสด' : '',
+        'PromptPay': exp.promptPayPhone || '',
+        'ธนาคาร': exp.bankName || '',
+        'เลขที่บัญชี': exp.accountNumber || '',
+        'ชื่อบัญชี': exp.accountName || '',
         'หมายเหตุ': exp.note || '',
         'วันที่ส่ง': submitted ? submitted.toLocaleDateString('th-TH') : ''
       })
@@ -1163,6 +1342,74 @@ watch(() => authStore.profile, async () => {
 
 .exp-textarea:focus {
   border-color: rgba(38, 166, 154, 0.5);
+}
+
+.exp-select {
+  appearance: auto;
+  cursor: pointer;
+}
+
+/* ====== Bank Section ====== */
+.exp-bank-section {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(66, 165, 245, 0.04);
+  border: 1px solid rgba(66, 165, 245, 0.12);
+}
+
+.exp-bank-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #42a5f5;
+  margin-bottom: 10px;
+}
+
+.exp-receive-methods {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.exp-receive-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(58, 59, 62, 0.3);
+  background: transparent;
+  color: #6b6c6f;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.exp-receive-option:hover {
+  border-color: rgba(66, 165, 245, 0.3);
+  color: #9ca3af;
+}
+
+.exp-receive-active {
+  border-color: rgba(66, 165, 245, 0.5);
+  background: rgba(66, 165, 245, 0.08);
+  color: #42a5f5;
+}
+
+.exp-radio {
+  display: none;
+}
+
+.q-mt-sm {
+  margin-top: 10px;
+}
+
+.exp-form-row-3 {
+  grid-template-columns: 1fr 1fr 1fr;
 }
 
 /* ====== Items Table ====== */
@@ -1911,6 +2158,25 @@ watch(() => authStore.profile, async () => {
   margin-bottom: 12px;
 }
 
+.exp-detail-bank {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(66, 165, 245, 0.06);
+  border: 1px solid rgba(66, 165, 245, 0.12);
+  font-size: 0.72rem;
+  color: #cecfd2;
+  margin-bottom: 12px;
+}
+
+.exp-detail-bank-label {
+  font-size: 0.62rem;
+  color: #6b6c6f;
+  margin-bottom: 2px;
+}
+
 .exp-trail {
   display: flex;
   align-items: center;
@@ -2005,6 +2271,33 @@ watch(() => authStore.profile, async () => {
 }
 
 /* ====== Pay Dialog ====== */
+.exp-pay-bank-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(66, 165, 245, 0.06);
+  border: 1px solid rgba(66, 165, 245, 0.15);
+  font-size: 0.74rem;
+  color: #cecfd2;
+  margin-bottom: 14px;
+}
+
+.exp-pay-bank-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  margin-top: 3px;
+}
+
+.exp-pay-bank-detail strong {
+  color: #e0e1e4;
+  font-weight: 600;
+}
+
 .exp-pay-methods {
   display: flex;
   gap: 10px;
@@ -2146,6 +2439,14 @@ watch(() => authStore.profile, async () => {
 
   .exp-form-row {
     grid-template-columns: 1fr;
+  }
+
+  .exp-form-row-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .exp-receive-methods {
+    flex-direction: column;
   }
 
   .exp-detail-dialog,

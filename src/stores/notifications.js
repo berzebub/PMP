@@ -118,7 +118,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
 
   // Send admin broadcast notification
   // target: { type: 'all' } | { type: 'department', department: string } | { type: 'individual', emails: string[] }
-  const sendAdminNotification = async ({ target, title, message }) => {
+  const sendAdminNotification = async ({ target, title, message, imageURL }) => {
     try {
       loading.value = true
 
@@ -165,6 +165,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
             type: 'admin_broadcast',
             title: title || 'ประกาศจากผู้ดูแลระบบ',
             message,
+            imageURL: imageURL || null,
             projectId: null,
             projectName: null,
             taskId: null,

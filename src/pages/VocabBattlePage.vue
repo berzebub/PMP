@@ -50,6 +50,27 @@
           <q-icon name="chevron_right" size="22px" color="grey-6" />
         </div>
 
+        <!-- Adaptive CEFR Test Card -->
+        <div class="vb-review-card" @click="startAdaptiveTestHandler">
+          <div class="vb-review-card-icon">
+            <q-icon name="quiz" size="28px" color="deep-purple-4" />
+          </div>
+          <div class="vb-review-card-body">
+            <div class="vb-review-card-title">ทดสอบระดับ CEFR</div>
+            <div class="vb-review-card-sub">
+              <template v-if="store.cefrBest?.passedLevel">
+                ระดับปัจจุบัน: <strong class="vb-cefr-best-inline" :style="{ color: levelColor(store.cefrBest.passedLevel) }">{{ store.cefrBest.passedLevel }}</strong>
+                · {{ store.cefrBest.accuracy }}%
+              </template>
+              <template v-else>Adaptive Test — วัดระดับคำศัพท์ของคุณ</template>
+            </div>
+          </div>
+          <div v-if="store.cefrBest?.passedLevel" class="vb-cefr-best-badge" :style="{ background: levelColor(store.cefrBest.passedLevel) + '20', color: levelColor(store.cefrBest.passedLevel), borderColor: levelColor(store.cefrBest.passedLevel) + '40' }">
+            {{ store.cefrBest.passedLevel }}
+          </div>
+          <q-icon v-else name="chevron_right" size="22px" color="grey-6" />
+        </div>
+
         <!-- Leaderboard -->
         <div class="vb-lb-section">
           <div class="vb-lb-header">
@@ -737,6 +758,179 @@
       </template>
 
       <!-- ═══════════════════════════════════════════ -->
+      <!--  SCREEN: Adaptive CEFR Test                    -->
+      <!-- ═══════════════════════════════════════════ -->
+      <template v-if="screen === 'adaptive-test' && store.adaptiveState">
+        <div class="vb-game">
+          <canvas ref="adaptiveFxCanvas" class="vb-fx-canvas"></canvas>
+
+          <!-- Adaptive HUD -->
+          <div class="vb-adaptive-hud">
+            <div class="vb-adaptive-hud-progress">
+              Q{{ store.adaptiveState.totalQuestions + 1 }}/30
+            </div>
+            <div class="vb-adaptive-hud-level-badge" :style="{ background: levelColor(LEVELS[store.adaptiveState.currentLevelIdx]) + '20', color: levelColor(LEVELS[store.adaptiveState.currentLevelIdx]), borderColor: levelColor(LEVELS[store.adaptiveState.currentLevelIdx]) + '50' }">
+              {{ LEVELS[store.adaptiveState.currentLevelIdx] }}
+            </div>
+            <div class="vb-adaptive-hud-accuracy">
+              {{ store.adaptiveState.totalQuestions > 0 ? Math.round((store.adaptiveState.totalCorrect / store.adaptiveState.totalQuestions) * 100) : 0 }}%
+            </div>
+          </div>
+
+          <!-- Level Indicator Bar -->
+          <div class="vb-adaptive-level-bar">
+            <div
+              v-for="(lvl, idx) in LEVELS"
+              :key="lvl"
+              class="vb-adaptive-level-seg"
+              :class="{
+                'vb-adaptive-level-seg-active': idx === store.adaptiveState.currentLevelIdx,
+                'vb-adaptive-level-seg-passed': idx <= store.adaptiveState.highestPassed,
+              }"
+              :style="{ '--seg-color': levelColor(lvl) }"
+            >
+              <div class="vb-adaptive-level-seg-fill"></div>
+              <span class="vb-adaptive-level-seg-label">{{ lvl }}</span>
+            </div>
+          </div>
+
+          <!-- Timer -->
+          <div class="vb-timer">
+            <div class="vb-timer-track">
+              <div class="vb-timer-fill" :style="{ width: adaptiveTimerPercent + '%', background: adaptiveTimerColor }"></div>
+            </div>
+            <div class="vb-timer-text" :style="{ color: adaptiveTimerColor }">{{ adaptiveTimerRemaining.toFixed(1) }}s</div>
+          </div>
+
+          <!-- Question Card -->
+          <div v-if="store.adaptiveState.currentQuestion" class="vb-question-card">
+            <div class="vb-question-direction">
+              {{ store.adaptiveState.currentQuestion.direction === 'en-to-th' ? 'English → Thai' : 'Thai → English' }}
+            </div>
+            <div class="vb-question-word">{{ store.adaptiveState.currentQuestion.word }}</div>
+
+            <transition name="vb-fade">
+              <div
+                v-if="adaptiveFeedback"
+                class="vb-feedback"
+                :class="adaptiveFeedback === 'correct' ? 'vb-feedback-correct' : 'vb-feedback-wrong'"
+              >
+                <q-icon :name="adaptiveFeedback === 'correct' ? 'check_circle' : 'cancel'" size="28px" />
+                <span>{{ adaptiveFeedback === 'correct' ? 'ถูกต้อง!' : 'ผิด! — ' + store.adaptiveState.currentQuestion.correctAnswer }}</span>
+              </div>
+            </transition>
+
+            <div class="vb-choices">
+              <button
+                v-for="(choice, idx) in store.adaptiveState.currentQuestion.choices"
+                :key="idx"
+                class="vb-choice-btn"
+                :class="{
+                  'vb-choice-correct': adaptiveAnswered && idx === store.adaptiveState.currentQuestion.correctIndex,
+                  'vb-choice-wrong': adaptiveAnswered && adaptiveSelectedIdx === idx && idx !== store.adaptiveState.currentQuestion.correctIndex,
+                  'vb-choice-disabled': adaptiveAnswered
+                }"
+                :disabled="adaptiveAnswered"
+                @click="handleAdaptiveAnswer(idx)"
+              >
+                <span class="vb-choice-letter">{{ ['A', 'B', 'C', 'D'][idx] }}</span>
+                <span class="vb-choice-text">{{ choice }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!--  SCREEN: Adaptive Test Result                  -->
+      <!-- ═══════════════════════════════════════════ -->
+      <template v-if="screen === 'adaptive-result' && adaptiveResult">
+        <div class="vb-result">
+          <canvas ref="adaptiveConfettiCanvas" class="vb-confetti-canvas"></canvas>
+
+          <div class="vb-adaptive-result-header">ผลการทดสอบ CEFR</div>
+
+          <div v-if="isAdaptiveNewBest && adaptiveResult.passedLevel" class="vb-adaptive-new-best">
+            <q-icon name="celebration" size="18px" />
+            New Best!
+          </div>
+          <div v-else-if="store.cefrBest?.passedLevel && !isAdaptiveNewBest" class="vb-adaptive-prev-best">
+            สูงสุด: <strong :style="{ color: levelColor(store.cefrBest.passedLevel) }">{{ store.cefrBest.passedLevel }}</strong> · {{ store.cefrBest.accuracy }}%
+          </div>
+
+          <!-- Level Badge -->
+          <div class="vb-adaptive-result-badge" :style="{ '--badge-color': adaptiveResult.passedLevel ? levelColor(adaptiveResult.passedLevel) : '#6b6c6f' }">
+            <div class="vb-adaptive-result-badge-level">
+              {{ adaptiveResult.passedLevel || '—' }}
+            </div>
+            <div class="vb-adaptive-result-badge-name">
+              {{ adaptiveResult.passedLevel ? LEVEL_META[adaptiveResult.passedLevel]?.name : 'ยังไม่ผ่าน A1' }}
+            </div>
+          </div>
+
+          <!-- Working Towards -->
+          <div v-if="adaptiveResult.workingTowards" class="vb-adaptive-result-towards">
+            กำลังพัฒนาสู่ <strong :style="{ color: levelColor(adaptiveResult.workingTowards) }">{{ adaptiveResult.workingTowards }} — {{ LEVEL_META[adaptiveResult.workingTowards]?.name }}</strong>
+          </div>
+
+          <!-- Visual Level Bar -->
+          <div class="vb-adaptive-result-bar">
+            <div
+              v-for="(lvl, idx) in LEVELS"
+              :key="lvl"
+              class="vb-adaptive-result-bar-seg"
+              :class="{
+                'vb-adaptive-result-bar-passed': idx <= adaptiveResult.passedLevelIdx,
+                'vb-adaptive-result-bar-working': idx === adaptiveResult.passedLevelIdx + 1,
+              }"
+              :style="{ '--seg-color': levelColor(lvl) }"
+            >
+              <div class="vb-adaptive-result-bar-fill"></div>
+              <span>{{ lvl }}</span>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="vb-adaptive-stats">
+            <div class="vb-adaptive-stat">
+              <div class="vb-adaptive-stat-val">{{ adaptiveResult.totalCorrect }}/{{ adaptiveResult.totalQuestions }}</div>
+              <div class="vb-adaptive-stat-label">ตอบถูก</div>
+            </div>
+            <div class="vb-adaptive-stat">
+              <div class="vb-adaptive-stat-val">{{ adaptiveResult.accuracy }}%</div>
+              <div class="vb-adaptive-stat-label">ความแม่นยำ</div>
+            </div>
+          </div>
+
+          <!-- Breakdown per Level -->
+          <div v-if="Object.keys(adaptiveResult.breakdown).length" class="vb-adaptive-breakdown">
+            <div class="vb-adaptive-breakdown-title">รายละเอียดแต่ละระดับ</div>
+            <div
+              v-for="lvl in LEVELS.filter(l => adaptiveResult.breakdown[l])"
+              :key="lvl"
+              class="vb-adaptive-breakdown-row"
+            >
+              <span class="vb-adaptive-breakdown-level" :style="{ color: levelColor(lvl) }">{{ lvl }}</span>
+              <div class="vb-adaptive-breakdown-bar-track">
+                <div
+                  class="vb-adaptive-breakdown-bar-fill"
+                  :style="{ width: (adaptiveResult.breakdown[lvl].total > 0 ? (adaptiveResult.breakdown[lvl].correct / adaptiveResult.breakdown[lvl].total) * 100 : 0) + '%', background: levelColor(lvl) }"
+                ></div>
+              </div>
+              <span class="vb-adaptive-breakdown-score">
+                {{ adaptiveResult.breakdown[lvl].correct }}/{{ adaptiveResult.breakdown[lvl].total }}
+              </span>
+            </div>
+          </div>
+
+          <div class="vb-result-actions">
+            <q-btn label="ทดสอบอีกครั้ง" color="deep-purple-6" icon="replay" no-caps unelevated class="vb-btn-full" @click="startAdaptiveTestHandler" />
+            <q-btn label="กลับเมนู" color="grey-7" icon="home" no-caps flat class="vb-btn-full" @click="backToMenu" />
+          </div>
+        </div>
+      </template>
+
+      <!-- ═══════════════════════════════════════════ -->
       <!--  OVERLAY: Heart Damage Vignette              -->
       <!-- ═══════════════════════════════════════════ -->
       <div
@@ -1053,6 +1247,138 @@ function levelColor(lvl) {
   return LEVEL_META[lvl]?.color || '#7c4dff'
 }
 
+// ==================== ADAPTIVE TEST STATE ====================
+
+const adaptiveFxCanvas = ref(null)
+const adaptiveConfettiCanvas = ref(null)
+const adaptiveFx = usePhysicsFX()
+const adaptiveConfetti = usePhysicsFX()
+
+const adaptiveAnswered = ref(false)
+const adaptiveSelectedIdx = ref(-1)
+const adaptiveFeedback = ref(null)
+const adaptiveTimerRemaining = ref(15)
+const ADAPTIVE_TIMER = 15
+let adaptiveTimer = null
+
+const adaptiveResult = computed(() => store.getAdaptiveResult())
+
+const isAdaptiveNewBest = computed(() => {
+  const r = adaptiveResult.value
+  const best = store.cefrBest
+  if (!r) return false
+  if (!best) return r.passedLevelIdx >= 0
+  return r.passedLevelIdx > best.passedLevelIdx ||
+    (r.passedLevelIdx === best.passedLevelIdx && r.accuracy > best.accuracy)
+})
+
+const adaptiveTimerPercent = computed(() => (adaptiveTimerRemaining.value / ADAPTIVE_TIMER) * 100)
+const adaptiveTimerColor = computed(() => {
+  const pct = adaptiveTimerPercent.value
+  if (pct > 50) return '#66bb6a'
+  if (pct > 25) return '#ffa726'
+  return '#ef5350'
+})
+
+function startAdaptiveTestHandler() {
+  const ok = store.startAdaptiveTest()
+  if (!ok) return
+  screen.value = 'adaptive-test'
+  adaptiveAnswered.value = false
+  adaptiveSelectedIdx.value = -1
+  adaptiveFeedback.value = null
+  startAdaptiveTimer()
+}
+
+function startAdaptiveTimer() {
+  clearAdaptiveTimer()
+  adaptiveTimerRemaining.value = ADAPTIVE_TIMER
+  const startTime = Date.now()
+  adaptiveTimer = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000
+    adaptiveTimerRemaining.value = Math.max(0, ADAPTIVE_TIMER - elapsed)
+    if (adaptiveTimerRemaining.value <= 0) {
+      clearAdaptiveTimer()
+      handleAdaptiveTimeout()
+    }
+  }, 50)
+}
+
+function clearAdaptiveTimer() {
+  if (adaptiveTimer) {
+    clearInterval(adaptiveTimer)
+    adaptiveTimer = null
+  }
+}
+
+function handleAdaptiveAnswer(idx) {
+  if (adaptiveAnswered.value) return
+  adaptiveAnswered.value = true
+  adaptiveSelectedIdx.value = idx
+  clearAdaptiveTimer()
+
+  const result = store.submitAdaptiveAnswer(idx)
+  if (!result) return
+
+  adaptiveFeedback.value = result.isCorrect ? 'correct' : 'wrong'
+
+  const center = getAdaptiveFxCenter()
+  if (result.isCorrect) {
+    adaptiveFx.spawnCorrect(center.x, center.y)
+  } else {
+    adaptiveFx.spawnWrong(center.x, center.y)
+    const q = store.adaptiveState?.currentQuestion
+    if (q) {
+      const pair = resolveWordPair(q)
+      if (pair) store.addWrongWord({ ...pair, level: q.level || LEVELS[store.adaptiveState.currentLevelIdx] })
+    }
+  }
+
+  setTimeout(() => advanceAdaptiveQuestion(), 1200)
+}
+
+function handleAdaptiveTimeout() {
+  if (adaptiveAnswered.value) return
+  adaptiveAnswered.value = true
+  adaptiveSelectedIdx.value = -1
+  adaptiveFeedback.value = 'wrong'
+
+  const q = store.adaptiveState?.currentQuestion
+  if (q) {
+    const pair = resolveWordPair(q)
+    if (pair) store.addWrongWord({ ...pair, level: q.level || LEVELS[store.adaptiveState.currentLevelIdx] })
+  }
+
+  store.adaptiveTimeOut()
+
+  const center = getAdaptiveFxCenter()
+  adaptiveFx.spawnWrong(center.x, center.y)
+
+  setTimeout(() => advanceAdaptiveQuestion(), 1200)
+}
+
+function advanceAdaptiveQuestion() {
+  store.adaptiveAdvance()
+
+  if (store.adaptiveState?.isFinished) {
+    clearAdaptiveTimer()
+    screen.value = 'adaptive-result'
+    return
+  }
+
+  adaptiveAnswered.value = false
+  adaptiveSelectedIdx.value = -1
+  adaptiveFeedback.value = null
+  startAdaptiveTimer()
+}
+
+function getAdaptiveFxCenter() {
+  if (adaptiveFxCanvas.value) {
+    return { x: adaptiveFxCanvas.value.width / 2, y: adaptiveFxCanvas.value.height * 0.4 }
+  }
+  return { x: 200, y: 200 }
+}
+
 // ==================== HANDLERS ====================
 
 function handleBack() {
@@ -1064,7 +1390,10 @@ function handleBack() {
   } else if (screen.value === 'mp-game' || screen.value === 'mp-lobby') {
     store.leaveRoom()
     screen.value = 'menu'
-  } else if (screen.value === 'sp-result' || screen.value === 'mp-result') {
+  } else if (screen.value === 'adaptive-test') {
+    clearAdaptiveTimer()
+    backToMenu()
+  } else if (screen.value === 'sp-result' || screen.value === 'mp-result' || screen.value === 'adaptive-result') {
     backToMenu()
   } else if (screen.value === 'sp-level' || screen.value === 'mp-choice' || screen.value === 'review') {
     screen.value = 'menu'
@@ -1081,6 +1410,7 @@ function backToMenu() {
   clearTimers()
   gameStore.fetchLeaderboard('vocab-battle')
   gameStore.fetchPersonalBest('vocab-battle')
+  store.fetchCefrBest()
 }
 
 // ── Single Player ──
@@ -1420,6 +1750,7 @@ function closeMiniGame() {
 function clearTimers() {
   clearSPTimer()
   clearMPTimer()
+  clearAdaptiveTimer()
   if (miniGameInterval) {
     clearInterval(miniGameInterval)
     miniGameInterval = null
@@ -1432,7 +1763,9 @@ function clearTimers() {
 watch(screen, async (newScreen, oldScreen) => {
   if (oldScreen === 'sp-game') spFx.cleanup()
   if (oldScreen === 'mp-game') mpFx.cleanup()
+  if (oldScreen === 'adaptive-test') adaptiveFx.cleanup()
   if (oldScreen === 'sp-result' || oldScreen === 'mp-result') confettiFx.cleanup()
+  if (oldScreen === 'adaptive-result') adaptiveConfetti.cleanup()
 
   await nextTick()
 
@@ -1445,6 +1778,11 @@ watch(screen, async (newScreen, oldScreen) => {
     mpFx.init(mpFxCanvas.value)
     const el = mpFxCanvas.value.parentElement
     if (el) mpFx.resize(el.clientWidth, el.clientHeight)
+  }
+  if (newScreen === 'adaptive-test' && adaptiveFxCanvas.value) {
+    adaptiveFx.init(adaptiveFxCanvas.value)
+    const el = adaptiveFxCanvas.value.parentElement
+    if (el) adaptiveFx.resize(el.clientWidth, el.clientHeight)
   }
   if (newScreen === 'sp-result' && spConfettiCanvas.value) {
     confettiFx.init(spConfettiCanvas.value)
@@ -1463,6 +1801,14 @@ watch(screen, async (newScreen, oldScreen) => {
       confettiFx.spawnConfetti(el.clientWidth, el.clientHeight, {
         palette: isWinner ? ['#FFD740', '#7C4DFF', '#E040FB', '#FFB74D'] : undefined,
       })
+    }
+  }
+  if (newScreen === 'adaptive-result' && adaptiveConfettiCanvas.value) {
+    adaptiveConfetti.init(adaptiveConfettiCanvas.value)
+    const el = adaptiveConfettiCanvas.value.parentElement
+    if (el) {
+      adaptiveConfetti.resize(el.clientWidth, el.clientHeight)
+      adaptiveConfetti.spawnConfetti(el.clientWidth, el.clientHeight)
     }
   }
 })
@@ -1509,17 +1855,26 @@ function handleResize() {
     const el = mpFxCanvas.value.parentElement
     if (el) mpFx.resize(el.clientWidth, el.clientHeight)
   }
+  if (screen.value === 'adaptive-test' && adaptiveFxCanvas.value) {
+    const el = adaptiveFxCanvas.value.parentElement
+    if (el) adaptiveFx.resize(el.clientWidth, el.clientHeight)
+  }
   if ((screen.value === 'sp-result' && spConfettiCanvas.value) ||
       (screen.value === 'mp-result' && mpConfettiCanvas.value)) {
     const canvas = spConfettiCanvas.value || mpConfettiCanvas.value
     const el = canvas?.parentElement
     if (el) confettiFx.resize(el.clientWidth, el.clientHeight)
   }
+  if (screen.value === 'adaptive-result' && adaptiveConfettiCanvas.value) {
+    const el = adaptiveConfettiCanvas.value.parentElement
+    if (el) adaptiveConfetti.resize(el.clientWidth, el.clientHeight)
+  }
 }
 
 onMounted(() => {
   gameStore.fetchLeaderboard('vocab-battle')
   gameStore.fetchPersonalBest('vocab-battle')
+  store.fetchCefrBest()
   window.addEventListener('resize', handleResize)
 })
 
@@ -1530,6 +1885,8 @@ onBeforeUnmount(() => {
   mpFx.cleanup()
   miniPhysics.cleanup()
   confettiFx.cleanup()
+  adaptiveFx.cleanup()
+  adaptiveConfetti.cleanup()
   if (screen.value === 'mp-lobby' || screen.value === 'mp-game') {
     store.leaveRoom()
   }
@@ -2982,6 +3339,317 @@ onBeforeUnmount(() => {
   50%      { box-shadow: inset 0 0 100px 40px rgba(220, 30, 30, 0.4),  inset 0 0 200px 70px rgba(180, 10, 10, 0.2); }
 }
 
+/* ====== Adaptive Test HUD ====== */
+.vb-adaptive-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 16px;
+  background: rgba(15, 15, 25, 0.65);
+  border-radius: 14px;
+  border: 1px solid rgba(124, 77, 255, 0.15);
+  backdrop-filter: blur(8px);
+}
+.vb-adaptive-hud-progress {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #9e9fa3;
+  font-variant-numeric: tabular-nums;
+}
+.vb-adaptive-hud-level-badge {
+  padding: 5px 16px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 900;
+  border: 2px solid;
+  letter-spacing: 0.05em;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.vb-adaptive-hud-accuracy {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #66bb6a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ====== Adaptive Level Bar ====== */
+.vb-adaptive-level-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.vb-adaptive-level-seg {
+  flex: 1;
+  position: relative;
+  height: 28px;
+  background: rgba(30, 30, 42, 0.7);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(80, 80, 110, 0.15);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.vb-adaptive-level-seg-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--seg-color);
+  opacity: 0;
+  transition: opacity 0.4s;
+  border-radius: 8px;
+}
+.vb-adaptive-level-seg-passed .vb-adaptive-level-seg-fill {
+  opacity: 0.2;
+}
+.vb-adaptive-level-seg-active {
+  border-color: var(--seg-color);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--seg-color) 30%, transparent);
+  transform: scaleY(1.15);
+}
+.vb-adaptive-level-seg-active .vb-adaptive-level-seg-fill {
+  opacity: 0.35;
+}
+.vb-adaptive-level-seg-label {
+  position: relative;
+  z-index: 1;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #9e9fa3;
+  letter-spacing: 0.04em;
+  transition: color 0.3s;
+}
+.vb-adaptive-level-seg-active .vb-adaptive-level-seg-label {
+  color: #fff;
+}
+.vb-adaptive-level-seg-passed .vb-adaptive-level-seg-label {
+  color: var(--seg-color);
+}
+
+/* ====== Adaptive Result ====== */
+.vb-adaptive-result-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #9e9fa3;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.vb-adaptive-new-best {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: rgba(255, 215, 64, 0.15);
+  color: #ffd740;
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 215, 64, 0.25);
+  animation: vb-new-best-glow 1.5s ease-in-out infinite alternate;
+}
+@keyframes vb-new-best-glow {
+  from { box-shadow: 0 0 8px rgba(255, 215, 64, 0.15); }
+  to { box-shadow: 0 0 20px rgba(255, 215, 64, 0.3); }
+}
+.vb-adaptive-prev-best {
+  font-size: 0.8rem;
+  color: #9e9fa3;
+  margin-bottom: 16px;
+}
+.vb-cefr-best-badge {
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 900;
+  border: 1.5px solid;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.vb-cefr-best-inline {
+  font-weight: 900;
+}
+.vb-adaptive-result-badge {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 15, 25, 0.6);
+  border: 3px solid var(--badge-color);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--badge-color) 25%, transparent),
+              inset 0 0 30px color-mix(in srgb, var(--badge-color) 10%, transparent);
+  animation: vb-badge-pulse 2.5s ease-in-out infinite alternate;
+}
+@keyframes vb-badge-pulse {
+  from { box-shadow: 0 0 30px color-mix(in srgb, var(--badge-color) 20%, transparent), inset 0 0 20px color-mix(in srgb, var(--badge-color) 8%, transparent); }
+  to { box-shadow: 0 0 50px color-mix(in srgb, var(--badge-color) 35%, transparent), inset 0 0 40px color-mix(in srgb, var(--badge-color) 15%, transparent); }
+}
+.vb-adaptive-result-badge-level {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--badge-color);
+  line-height: 1;
+  text-shadow: 0 0 20px color-mix(in srgb, var(--badge-color) 40%, transparent);
+}
+.vb-adaptive-result-badge-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #9e9fa3;
+  margin-top: 4px;
+  letter-spacing: 0.06em;
+}
+.vb-adaptive-result-towards {
+  font-size: 0.9rem;
+  color: #b0b1b4;
+  margin-bottom: 24px;
+}
+
+/* ====== Adaptive Result Level Bar ====== */
+.vb-adaptive-result-bar {
+  display: flex;
+  gap: 4px;
+  margin: 0 auto 28px;
+  max-width: 400px;
+}
+.vb-adaptive-result-bar-seg {
+  flex: 1;
+  height: 36px;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 30, 42, 0.6);
+  border: 1px solid rgba(80, 80, 110, 0.15);
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #6b6c6f;
+  transition: all 0.5s;
+}
+.vb-adaptive-result-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--seg-color);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+.vb-adaptive-result-bar-seg span {
+  position: relative;
+  z-index: 1;
+}
+.vb-adaptive-result-bar-passed {
+  border-color: var(--seg-color);
+}
+.vb-adaptive-result-bar-passed .vb-adaptive-result-bar-fill {
+  opacity: 0.3;
+}
+.vb-adaptive-result-bar-passed span {
+  color: var(--seg-color);
+}
+.vb-adaptive-result-bar-working {
+  border-color: var(--seg-color);
+  border-style: dashed;
+}
+.vb-adaptive-result-bar-working .vb-adaptive-result-bar-fill {
+  opacity: 0.1;
+  animation: vb-bar-working-pulse 1.5s ease-in-out infinite alternate;
+}
+@keyframes vb-bar-working-pulse {
+  from { opacity: 0.08; }
+  to { opacity: 0.2; }
+}
+.vb-adaptive-result-bar-working span {
+  color: var(--seg-color);
+  opacity: 0.7;
+}
+
+/* ====== Adaptive Stats ====== */
+.vb-adaptive-stats {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.vb-adaptive-stat {
+  text-align: center;
+  padding: 14px 20px;
+  background: rgba(15, 15, 25, 0.5);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 90px;
+}
+.vb-adaptive-stat-val {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+}
+.vb-adaptive-stat-label {
+  font-size: 0.68rem;
+  color: #9e9fa3;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* ====== Adaptive Breakdown ====== */
+.vb-adaptive-breakdown {
+  background: rgba(15, 15, 25, 0.5);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.vb-adaptive-breakdown-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #9e9fa3;
+  margin-bottom: 14px;
+  letter-spacing: 0.06em;
+}
+.vb-adaptive-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.vb-adaptive-breakdown-row:last-child {
+  margin-bottom: 0;
+}
+.vb-adaptive-breakdown-level {
+  font-size: 0.78rem;
+  font-weight: 800;
+  width: 28px;
+  text-align: center;
+}
+.vb-adaptive-breakdown-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(40, 40, 55, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.vb-adaptive-breakdown-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 2px;
+}
+.vb-adaptive-breakdown-score {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #b0b1b4;
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ====== Responsive ====== */
 @media (max-width: 600px) {
   .vb-page { padding: 14px; }
@@ -2996,5 +3664,8 @@ onBeforeUnmount(() => {
   .vb-result-score { font-size: 2.2rem; }
   .vb-lobby-header { flex-direction: column; gap: 10px; text-align: center; }
   .vb-hero-title { font-size: 1.6rem; }
+  .vb-adaptive-result-badge { width: 130px; height: 130px; }
+  .vb-adaptive-result-badge-level { font-size: 2.4rem; }
+  .vb-adaptive-level-seg-label { font-size: 0.55rem; }
 }
 </style>

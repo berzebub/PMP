@@ -21,11 +21,13 @@
         </div>
 
         <!-- Canvas Wrapper -->
-        <div class="herd-canvas-wrapper" ref="canvasWrapper">
+        <div class="herd-canvas-wrapper" ref="canvasWrapper"
+             :style="{ height: (canvasHeight * canvasScale) + 'px' }">
           <canvas
             ref="gameCanvas"
             :width="canvasWidth"
             :height="canvasHeight"
+            :style="{ transform: 'scale(' + canvasScale + ')', transformOrigin: 'top left' }"
             @click="handleCanvasClick"
             @touchstart.prevent="handleTouchStart"
           ></canvas>
@@ -243,8 +245,11 @@ const authStore = useAuthStore()
 
 const gameCanvas = ref(null)
 const canvasWrapper = ref(null)
-const canvasWidth = ref(1200)
-const canvasHeight = ref(500)
+const DESIGN_WIDTH = 1200
+const DESIGN_HEIGHT = 500
+const canvasWidth = ref(DESIGN_WIDTH)
+const canvasHeight = ref(DESIGN_HEIGHT)
+const canvasScale = ref(1)
 
 const gameState = ref('idle') // 'idle' | 'playing' | 'gameover'
 const displayScore = ref(0)
@@ -1313,9 +1318,9 @@ function initCanvas() {
   const wrapper = canvasWrapper.value
   if (!wrapper) return
 
-  const wrapperWidth = wrapper.clientWidth
-  canvasWidth.value = wrapperWidth - 4
-  canvasHeight.value = Math.max(350, Math.min(550, Math.floor(canvasWidth.value * 0.42)))
+  canvasWidth.value = DESIGN_WIDTH
+  canvasHeight.value = DESIGN_HEIGHT
+  updateCanvasScale()
 
   nextTick(() => {
     const canvas = gameCanvas.value
@@ -1323,6 +1328,13 @@ function initCanvas() {
     ctx = canvas.getContext('2d')
     renderIdleScreen()
   })
+}
+
+function updateCanvasScale() {
+  const wrapper = canvasWrapper.value
+  if (!wrapper) return
+  const wrapperWidth = wrapper.clientWidth - 4
+  canvasScale.value = Math.min(1, wrapperWidth / DESIGN_WIDTH)
 }
 
 function renderIdleScreen() {
@@ -1379,18 +1391,7 @@ function renderIdleScreen() {
 }
 
 function handleResize() {
-  const wrapper = canvasWrapper.value
-  if (!wrapper) return
-
-  const wrapperWidth = wrapper.clientWidth
-  canvasWidth.value = wrapperWidth - 4
-  canvasHeight.value = Math.max(350, Math.min(550, Math.floor(canvasWidth.value * 0.42)))
-
-  nextTick(() => {
-    if (gameState.value === 'idle') {
-      renderIdleScreen()
-    }
-  })
+  updateCanvasScale()
 }
 
 // ==================== LIFECYCLE ====================
@@ -1500,8 +1501,6 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(58, 59, 62, 0.3);
-  display: flex;
-  justify-content: center;
 }
 
 .herd-canvas-wrapper canvas {

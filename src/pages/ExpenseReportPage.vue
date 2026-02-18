@@ -5,16 +5,16 @@
       <div class="report-header">
         <div class="report-header-left">
           <div class="report-header-icon">
-            <q-icon name="assessment" size="26px" />
+            <q-icon name="receipt_long" size="26px" />
           </div>
           <div>
-            <div class="report-header-title">Leave Report</div>
-            <div class="report-header-subtitle">รายงานการลาของพนักงาน</div>
+            <div class="report-header-title">Expense Report</div>
+            <div class="report-header-subtitle">รายงานการเบิกค่าใช้จ่ายของพนักงาน</div>
           </div>
         </div>
         <div class="report-header-actions">
           <!-- View Toggle -->
-          <div v-if="hasFetched && reportLeaves.length > 0" class="report-view-toggle">
+          <div v-if="hasFetched && reportExpenses.length > 0" class="report-view-toggle">
             <button class="report-view-btn" :class="{ 'report-view-active': viewMode === 'list' }" @click="viewMode = 'list'">
               <q-icon name="list_alt" size="15px" />
               <span>รายการ</span>
@@ -24,7 +24,7 @@
               <span>กราฟ</span>
             </button>
           </div>
-          <button v-if="reportLeaves.length > 0" class="report-export-btn" @click="exportToExcel">
+          <button v-if="reportExpenses.length > 0" class="report-export-btn" @click="exportToExcel">
             <q-icon name="download" size="16px" />
             <span>Export Excel</span>
           </button>
@@ -83,9 +83,8 @@
           <!-- Date Mode Toggle -->
           <div class="report-filter-group">
             <label class="report-filter-label">ช่วงเวลา</label>
-            <q-btn-toggle v-model="dateMode" no-caps rounded unelevated toggle-color="deep-purple"
+            <q-btn-toggle v-model="dateMode" no-caps rounded unelevated toggle-color="green-7"
               text-color="grey-5" color="grey-10" :options="[
-                { label: 'วันนี้', value: 'today' },
                 { label: 'ทั้งปี', value: 'year' },
                 { label: 'กำหนดเอง', value: 'custom' }
               ]" class="report-date-toggle" />
@@ -106,9 +105,9 @@
               <template v-slot:append>
                 <q-icon name="date_range" class="cursor-pointer">
                   <q-popup-proxy cover transition-show="scale" transition-hide="scale">
-                    <q-date v-model="dateRange" range mask="YYYY-MM-DD" dark color="deep-purple" minimal>
+                    <q-date v-model="dateRange" range mask="YYYY-MM-DD" dark color="green-7" minimal>
                       <div class="row items-center justify-end">
-                        <q-btn v-close-popup label="ตกลง" color="deep-purple" flat />
+                        <q-btn v-close-popup label="ตกลง" color="green-7" flat />
                       </div>
                     </q-date>
                   </q-popup-proxy>
@@ -119,10 +118,10 @@
 
           <!-- Fetch Button -->
           <div class="report-filter-group report-filter-action">
-            <button class="report-fetch-btn" :disabled="leaveStore.loading || !canFetch" @click="fetchReport">
-              <q-spinner v-if="leaveStore.loading" size="16px" color="white" />
+            <button class="report-fetch-btn" :disabled="expenseStore.fetching || !canFetch" @click="fetchReport">
+              <q-spinner v-if="expenseStore.fetching" size="16px" color="white" />
               <q-icon v-else name="search" size="16px" />
-              <span>{{ leaveStore.loading ? 'กำลังโหลด...' : 'ดูรายงาน' }}</span>
+              <span>{{ expenseStore.fetching ? 'กำลังโหลด...' : 'ดูรายงาน' }}</span>
             </button>
           </div>
         </div>
@@ -130,101 +129,90 @@
 
       <!-- Summary Cards -->
       <div v-if="hasFetched" class="report-summary-row">
-        <!-- Per-type cards -->
-        <div v-for="t in leaveStore.leaveTypes" :key="t.value" class="report-summary-card">
+        <!-- Total Amount Card -->
+        <div class="report-summary-card">
           <div class="report-summary-card-header">
-            <span class="report-summary-icon">{{ t.icon }}</span>
-            <span class="report-summary-label">{{ t.label }}</span>
+            <q-icon name="account_balance_wallet" size="16px" style="color: #66bb6a;" />
+            <span class="report-summary-label">ยอดรวมทั้งหมด</span>
           </div>
           <div class="report-summary-numbers">
             <div class="report-summary-stat">
-              <span class="report-summary-value">{{ formatDays(summaryByType[t.value]?.days || 0) }}</span>
-              <span class="report-summary-unit">วัน</span>
+              <span class="report-summary-value">{{ formatAmount(totalAmount) }}</span>
+              <span class="report-summary-unit">บาท</span>
             </div>
             <div class="report-summary-stat">
-              <span class="report-summary-value report-summary-count">{{ summaryByType[t.value]?.count || 0 }}</span>
-              <span class="report-summary-unit">ครั้ง</span>
+              <span class="report-summary-value report-summary-count">{{ reportExpenses.length }}</span>
+              <span class="report-summary-unit">รายการ</span>
             </div>
           </div>
-          <!-- Individual mode: quota info -->
-          <div v-if="mode === 'individual' && individualQuota" class="report-quota-info">
-            <template v-if="leaveStore.noQuotaTypes.includes(t.value)">
-              <span>โควต้า {{ t.value === 'maternity' ? '90 วัน/ครั้ง' : 'ไม่จำกัด' }}</span>
-            </template>
-            <template v-else>
-              <span>โควต้า {{ individualQuota[t.value] || 0 }} วัน</span>
-              <span class="report-quota-sep">|</span>
-              <span :class="{ 'report-quota-warning': (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0) <= 0 }">
-                คงเหลือ {{ formatDays(Math.max(0, (individualQuota[t.value] || 0) - (summaryByType[t.value]?.days || 0))) }} วัน
-              </span>
-            </template>
-          </div>
           <div class="report-summary-bar">
-            <div class="report-summary-bar-fill" :style="{ width: getBarWidth(t.value), background: t.color }"></div>
+            <div class="report-summary-bar-fill" style="width: 100%; background: #66bb6a;"></div>
           </div>
         </div>
 
-        <!-- Status breakdown card -->
-        <div class="report-summary-card report-status-card">
+        <!-- Per-status cards -->
+        <div v-for="s in statusCards" :key="s.key" class="report-summary-card">
           <div class="report-summary-card-header">
-            <q-icon name="donut_small" size="16px" style="color: #ce93d8;" />
-            <span class="report-summary-label">สถานะ</span>
+            <q-icon :name="s.icon" size="16px" :style="{ color: s.color }" />
+            <span class="report-summary-label">{{ s.label }}</span>
           </div>
-          <div class="report-status-grid">
-            <div v-for="s in statusSummary" :key="s.key" class="report-status-item">
-              <div class="report-status-dot" :style="{ background: s.color }"></div>
-              <span class="report-status-label">{{ s.label }}</span>
-              <span class="report-status-count">{{ s.count }}</span>
+          <div class="report-summary-numbers">
+            <div class="report-summary-stat">
+              <span class="report-summary-value">{{ formatAmount(s.amount) }}</span>
+              <span class="report-summary-unit">บาท</span>
+            </div>
+            <div class="report-summary-stat">
+              <span class="report-summary-value report-summary-count">{{ s.count }}</span>
+              <span class="report-summary-unit">ครั้ง</span>
             </div>
           </div>
-          <div class="report-total-row">
-            <span>ทั้งหมด</span>
-            <strong>{{ reportLeaves.length }} รายการ</strong>
+          <div class="report-summary-bar">
+            <div class="report-summary-bar-fill" :style="{ width: getBarWidth(s.amount), background: s.color }"></div>
           </div>
         </div>
       </div>
 
       <!-- Chart View -->
-      <div v-if="hasFetched && viewMode === 'chart' && reportLeaves.length > 0" class="report-chart-section">
+      <div v-if="hasFetched && viewMode === 'chart' && reportExpenses.length > 0" class="report-chart-section">
         <div class="report-chart-grid">
-          <!-- Chart 1: Leave Days by Type (Doughnut) -->
+          <!-- Chart 1: Amount by Status (Doughnut) -->
           <div class="report-chart-card">
             <div class="report-chart-card-header">
               <q-icon name="donut_large" size="16px" style="color: #42a5f5;" />
-              <span>สัดส่วนการลาตามประเภท</span>
+              <span>สัดส่วนยอดเบิกตามสถานะ</span>
             </div>
             <div class="report-chart-body">
-              <Doughnut :data="typeChartData" :options="doughnutOptions" />
+              <Doughnut :data="statusAmountChartData" :options="doughnutOptions" />
             </div>
           </div>
 
-          <!-- Chart 2: Monthly Leave Trend (Stacked Bar) -->
+          <!-- Chart 2: Monthly Expense Trend (Bar) -->
           <div class="report-chart-card">
             <div class="report-chart-card-header">
               <q-icon name="trending_up" size="16px" style="color: #66bb6a;" />
-              <span>แนวโน้มการลารายเดือน</span>
+              <span>แนวโน้มการเบิกรายเดือน</span>
             </div>
             <div class="report-chart-body">
-              <Bar :data="monthlyChartData" :options="stackedBarOptions" />
+              <Bar :data="monthlyChartData" :options="barOptions" />
             </div>
           </div>
 
-          <!-- Chart 3: Status Distribution (Doughnut) -->
+          <!-- Chart 3: Status Count Distribution (Doughnut) -->
           <div class="report-chart-card">
             <div class="report-chart-card-header">
               <q-icon name="pie_chart" size="16px" style="color: #ce93d8;" />
-              <span>สัดส่วนสถานะคำขอ</span>
+              <span>สัดส่วนจำนวนคำขอตามสถานะ</span>
             </div>
             <div class="report-chart-body">
-              <Doughnut :data="statusChartData" :options="doughnutOptions" />
+              <Doughnut :data="statusCountChartData" :options="doughnutOptions" />
             </div>
           </div>
 
-          <!-- Chart 4: Department / Quota Usage (Horizontal Bar) -->
+          <!-- Chart 4: Department Ranking (Horizontal Bar) -->
           <div class="report-chart-card">
             <div class="report-chart-card-header">
               <q-icon name="leaderboard" size="16px" style="color: #ffb74d;" />
-              <span>{{ mode === 'individual' ? 'การใช้โควต้า' : 'อันดับแผนก' }}</span>
+              <span>{{ mode === 'individual' ? 'ยอดเบิกรายเดือน' : 'อันดับแผนก' }}</span>
             </div>
             <div class="report-chart-body">
               <Bar :data="fourthChartData" :options="horizontalBarOptions" />
@@ -236,63 +224,69 @@
       <!-- Detail List -->
       <div v-if="hasFetched && viewMode === 'list'" class="report-card report-detail-card">
         <div class="report-card-header">
-          <q-icon name="list_alt" size="18px" style="color: #42a5f5;" />
-          <span class="report-card-title">รายละเอียดการลา</span>
-          <q-badge v-if="reportLeaves.length > 0" :label="reportLeaves.length + ' รายการ'" class="report-count-badge" />
+          <q-icon name="list_alt" size="18px" style="color: #66bb6a;" />
+          <span class="report-card-title">รายละเอียดการเบิก</span>
+          <q-badge v-if="reportExpenses.length > 0" :label="reportExpenses.length + ' รายการ'" class="report-count-badge" />
         </div>
 
-        <div v-if="reportLeaves.length === 0" class="report-empty">
+        <div v-if="reportExpenses.length === 0" class="report-empty">
           <q-icon name="search_off" size="48px" style="color: #2a2b2e;" />
-          <span>ไม่พบข้อมูลการลาตามเงื่อนไขที่เลือก</span>
+          <span>ไม่พบข้อมูลการเบิกตามเงื่อนไขที่เลือก</span>
         </div>
 
         <div v-else class="report-detail-list">
-          <div v-for="leave in reportLeaves" :key="leave.id" class="report-detail-item">
+          <div v-for="expense in reportExpenses" :key="expense.id" class="report-detail-item">
             <div class="report-detail-top">
               <div class="report-detail-type">
-                <span>{{ getTypeInfo(leave.leaveType).icon }}</span>
-                <span>{{ getTypeInfo(leave.leaveType).label }}</span>
-                <span v-if="leave.durationType && leave.durationType !== 'full_day'" class="report-duration-badge">
-                  {{ getDurationLabel(leave) }}
-                </span>
+                <q-icon name="receipt" size="14px" style="color: #66bb6a;" />
+                <span>{{ formatAmount(expense.totalAmount) }} บาท</span>
+                <span class="report-items-badge">{{ expense.items?.length || 0 }} รายการ</span>
               </div>
               <div class="report-detail-status"
-                :style="{ color: getStatusInfo(leave.status).color, background: getStatusInfo(leave.status).color + '15' }">
-                <q-icon :name="getStatusInfo(leave.status).icon" size="12px" />
-                <span>{{ getStatusInfo(leave.status).label }}</span>
+                :style="{ color: getStatusInfo(expense.status).color, background: getStatusInfo(expense.status).color + '15' }">
+                <q-icon :name="getStatusInfo(expense.status).icon" size="12px" />
+                <span>{{ getStatusInfo(expense.status).label }}</span>
               </div>
             </div>
 
-            <div class="report-detail-name">{{ leave.firstName }} {{ leave.lastName }}</div>
+            <div class="report-detail-name">{{ expense.firstName }} {{ expense.lastName }}</div>
 
             <div class="report-detail-meta">
               <span class="report-detail-dates">
-                <q-icon name="date_range" size="13px" />
-                {{ formatDate(leave.startDate) }}{{ leave.startDate !== leave.endDate ? ' — ' + formatDate(leave.endDate) : '' }}
+                <q-icon name="schedule" size="13px" />
+                {{ formatTimestamp(expense.submittedAt) }}
               </span>
-              <span class="report-detail-days">{{ getDisplayDays(leave) }} วัน</span>
-              <span v-if="leave.department" class="report-detail-dept">
+              <span v-if="expense.department" class="report-detail-dept">
                 <q-icon name="business" size="12px" />
-                {{ leave.department }}
+                {{ expense.department }}
               </span>
             </div>
 
-            <div v-if="leave.details" class="report-detail-reason">{{ leave.details }}</div>
+            <!-- Expense Items -->
+            <div v-if="expense.items && expense.items.length > 0" class="report-expense-items">
+              <div v-for="item in expense.items" :key="item.seq" class="report-expense-item-row">
+                <span class="report-expense-item-desc">{{ item.description }}</span>
+                <span class="report-expense-item-amount">{{ formatAmount(item.amount) }} ฿</span>
+              </div>
+            </div>
 
-            <div v-if="leave.headApproval || leave.hrApproval" class="report-detail-approvals">
-              <span v-if="leave.headApproval" class="report-approval-chip">
-                <q-icon name="check_circle" size="11px" style="color: #66bb6a;" />
-                หัวหน้า: {{ leave.headApproval.approvedByName }}
-              </span>
-              <span v-if="leave.hrApproval" class="report-approval-chip">
+            <div v-if="expense.note" class="report-detail-reason">{{ expense.note }}</div>
+
+            <div v-if="expense.hrReviewedByName || expense.paidByName" class="report-detail-approvals">
+              <span v-if="expense.hrReviewedByName" class="report-approval-chip">
                 <q-icon name="check_circle" size="11px" style="color: #ce93d8;" />
-                HR: {{ leave.hrApproval.approvedByName }}
+                HR: {{ expense.hrReviewedByName }}
+              </span>
+              <span v-if="expense.paidByName" class="report-approval-chip">
+                <q-icon name="paid" size="11px" style="color: #66bb6a;" />
+                จ่ายโดย: {{ expense.paidByName }}
+                <template v-if="expense.paymentMethod"> ({{ expense.paymentMethod === 'transfer' ? 'โอน' : 'เงินสด' }})</template>
               </span>
             </div>
 
-            <div v-if="leave.status === 'rejected' && leave.rejectionReason" class="report-detail-rejected">
+            <div v-if="expense.status === 'rejected' && expense.rejectionReason" class="report-detail-rejected">
               <q-icon name="info" size="11px" />
-              เหตุผล: {{ leave.rejectionReason }}
+              เหตุผล: {{ expense.rejectionReason }}
             </div>
           </div>
         </div>
@@ -301,9 +295,9 @@
       <!-- Empty State (before fetch) -->
       <div v-if="!hasFetched" class="report-card report-intro-card">
         <div class="report-intro">
-          <q-icon name="assessment" size="56px" style="color: #2a2b2e;" />
+          <q-icon name="receipt_long" size="56px" style="color: #2a2b2e;" />
           <div class="report-intro-title">เลือกเงื่อนไขและกด "ดูรายงาน"</div>
-          <div class="report-intro-desc">เลือกดูรายงานได้ทั้งรายบุคคล รายแผนก หรือทั้งหมด</div>
+          <div class="report-intro-desc">เลือกดูรายงานการเบิกได้ทั้งรายบุคคล รายแผนก หรือทั้งหมด</div>
         </div>
       </div>
     </div>
@@ -312,7 +306,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useLeaveStore } from 'stores/leave'
+import { useExpenseStore } from 'stores/expense'
 import { useAuthStore } from 'stores/auth'
 import { useDepartmentsStore } from 'stores/departments'
 import * as XLSX from 'xlsx'
@@ -325,14 +319,12 @@ import {
 
 ChartJS.register(Title, Tooltip, Legend, ArcElement, CategoryScale, LinearScale, BarElement)
 
-const leaveStore = useLeaveStore()
+const expenseStore = useExpenseStore()
 const authStore = useAuthStore()
 const departmentsStore = useDepartmentsStore()
 
-// --- View Mode ---
 const viewMode = ref('list')
 
-// --- Filter State ---
 const modes = [
   { value: 'individual', label: 'รายบุคคล', icon: 'person' },
   { value: 'department', label: 'รายแผนก', icon: 'business' },
@@ -344,11 +336,9 @@ const selectedUser = ref(null)
 const selectedDept = ref(null)
 const hasFetched = ref(false)
 const filteredUsers = ref([])
-const individualQuota = ref(null)
 
-// --- Date Range ---
 const currentYear = new Date().getFullYear()
-const dateMode = ref('today')
+const dateMode = ref('year')
 const selectedYear = ref(currentYear)
 const dateRange = ref({ from: `${currentYear}-01-01`, to: `${currentYear}-12-31` })
 
@@ -357,35 +347,24 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => ({
   value: currentYear - i
 }))
 
-// Display formatted date range in the input
 const dateRangeDisplay = computed(() => {
   if (!dateRange.value) return ''
-  if (typeof dateRange.value === 'string') {
-    // Single date selected (from === to)
-    return dateRange.value
-  }
+  if (typeof dateRange.value === 'string') return dateRange.value
   return `${dateRange.value.from} ~ ${dateRange.value.to}`
 })
 
-// Compute effective start/end based on mode
 const getEffectiveDateRange = () => {
-  if (dateMode.value === 'today') {
-    const now = new Date()
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    return { startDate: todayStr, endDate: todayStr }
-  }
   if (dateMode.value === 'year') {
     const y = selectedYear.value
     return { startDate: `${y}-01-01`, endDate: `${y}-12-31` }
   }
-  // Custom range
   if (typeof dateRange.value === 'string') {
     return { startDate: dateRange.value, endDate: dateRange.value }
   }
   return { startDate: dateRange.value.from, endDate: dateRange.value.to }
 }
 
-const reportLeaves = computed(() => leaveStore.reportLeaves)
+const reportExpenses = computed(() => expenseStore.reportExpenses)
 
 const canFetch = computed(() => {
   if (mode.value === 'individual') return !!selectedUser.value
@@ -393,18 +372,12 @@ const canFetch = computed(() => {
   return true
 })
 
-// --- Init ---
 onMounted(async () => {
   await Promise.all([
     authStore.allProfiles.length === 0 ? authStore.fetchAllProfiles() : Promise.resolve(),
-    departmentsStore.departments.length === 0 ? departmentsStore.fetchDepartments() : Promise.resolve(),
-    leaveStore.fetchLeaveQuota()
+    departmentsStore.departments.length === 0 ? departmentsStore.fetchDepartments() : Promise.resolve()
   ])
-
   filteredUsers.value = buildUserList()
-
-  // Auto-fetch today's leaves on page load
-  await fetchReport()
 })
 
 const buildUserList = () => {
@@ -425,112 +398,78 @@ const filterUsers = (val, update) => {
   })
 }
 
-// --- Fetch Report ---
 const fetchReport = async () => {
   const { startDate, endDate } = getEffectiveDateRange()
-  await leaveStore.fetchLeaveReport({
+  await expenseStore.fetchExpenseReport({
     mode: mode.value,
     userId: mode.value === 'individual' ? selectedUser.value : '',
     department: mode.value === 'department' ? selectedDept.value : '',
-    year: dateMode.value === 'year' ? selectedYear.value : new Date(startDate).getFullYear(),
     startDate,
     endDate
   })
   hasFetched.value = true
-
-  // Fetch individual quota if in individual mode
-  if (mode.value === 'individual' && selectedUser.value) {
-    const iq = await leaveStore.fetchUserIndividualQuota(selectedUser.value)
-    if (iq) {
-      individualQuota.value = { sick: iq.sick, personal: iq.personal, vacation: iq.vacation, maternity: 90, unpaid: 999, other: 999 }
-    } else {
-      individualQuota.value = { ...leaveStore.leaveQuota }
-    }
-  } else {
-    individualQuota.value = null
-  }
 }
 
-// --- Summary Computeds ---
-const summaryByType = computed(() => {
-  const map = { sick: { days: 0, count: 0 }, personal: { days: 0, count: 0 }, vacation: { days: 0, count: 0 }, maternity: { days: 0, count: 0 }, unpaid: { days: 0, count: 0 }, other: { days: 0, count: 0 } }
-  for (const leave of reportLeaves.value) {
-    if (leave.status === 'rejected' || leave.status === 'cancelled') continue
-    const type = leave.leaveType
-    if (!map[type]) continue
-    const days = leave.totalDays !== undefined && leave.totalDays !== null
-      ? leave.totalDays
-      : leaveStore.calcBusinessDays(leave.startDate, leave.endDate)
-    map[type].days += days
-    map[type].count++
+// --- Summary ---
+const allStatuses = ['pending_hr', 'pending_ceo', 'approved', 'paid', 'rejected', 'cancelled']
+
+const summaryByStatus = computed(() => {
+  const map = {}
+  for (const s of allStatuses) {
+    map[s] = { count: 0, amount: 0 }
   }
-  // Round days
+  for (const exp of reportExpenses.value) {
+    if (map[exp.status]) {
+      map[exp.status].count++
+      map[exp.status].amount += exp.totalAmount || 0
+    }
+  }
   for (const key of Object.keys(map)) {
-    map[key].days = Math.round(map[key].days * 100) / 100
+    map[key].amount = Math.round(map[key].amount * 100) / 100
   }
   return map
 })
 
-const statusSummary = computed(() => {
-  const counts = {}
-  for (const leave of reportLeaves.value) {
-    counts[leave.status] = (counts[leave.status] || 0) + 1
-  }
-  const statuses = ['approved', 'pending_head', 'pending_hr', 'rejected', 'cancelled']
-  return statuses
-    .filter(s => counts[s])
-    .map(s => ({
-      key: s,
-      label: leaveStore.statusLabels[s]?.label || s,
-      color: leaveStore.statusLabels[s]?.color || '#9e9e9e',
-      count: counts[s] || 0
-    }))
+const totalAmount = computed(() => {
+  return Math.round(reportExpenses.value.reduce((sum, e) => sum + (e.totalAmount || 0), 0) * 100) / 100
 })
 
-const getBarWidth = (type) => {
-  if (!individualQuota.value) {
-    const maxDays = Math.max(...Object.values(summaryByType.value).map(v => v.days), 1)
-    return ((summaryByType.value[type]?.days || 0) / maxDays * 100) + '%'
-  }
-  const quota = individualQuota.value[type] || 1
-  return Math.min(100, ((summaryByType.value[type]?.days || 0) / quota * 100)) + '%'
+const statusCards = computed(() => {
+  return allStatuses
+    .filter(s => summaryByStatus.value[s]?.count > 0)
+    .map(s => {
+      const info = expenseStore.statusLabels[s] || { label: s, color: '#9e9e9e', icon: 'info' }
+      return {
+        key: s,
+        label: info.label,
+        color: info.color,
+        icon: info.icon,
+        count: summaryByStatus.value[s].count,
+        amount: summaryByStatus.value[s].amount
+      }
+    })
+})
+
+const getBarWidth = (amount) => {
+  if (totalAmount.value === 0) return '0%'
+  return Math.min(100, (amount / totalAmount.value) * 100) + '%'
 }
 
 // --- Helpers ---
-const getTypeInfo = (type) => {
-  return leaveStore.leaveTypes.find(t => t.value === type) || { icon: '📄', label: type, color: '#9e9e9e' }
-}
-
 const getStatusInfo = (status) => {
-  return leaveStore.statusLabels[status] || { label: status, color: '#9e9e9e', icon: 'info' }
+  return expenseStore.statusLabels[status] || { label: status, color: '#9e9e9e', icon: 'info' }
 }
 
-const getDurationLabel = (leave) => {
-  if (!leave.durationType || leave.durationType === 'full_day') return ''
-  const dt = leaveStore.durationTypes.find(d => d.value === leave.durationType)
-  if (leave.durationType === 'custom' && leave.customStartTime && leave.customEndTime) {
-    return `${leave.customStartTime}-${leave.customEndTime}`
-  }
-  return dt?.label || leave.durationType
+const formatAmount = (amount) => {
+  if (amount == null) return '0'
+  return Number(amount).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-const getDisplayDays = (leave) => {
-  if (leave.totalDays !== undefined && leave.totalDays !== null) {
-    return formatDays(leave.totalDays)
-  }
-  return leaveStore.calcBusinessDays(leave.startDate, leave.endDate)
-}
-
-const formatDays = (days) => {
-  if (days === Math.floor(days)) return days
-  return Math.round(days * 100) / 100
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return ''
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+const formatTimestamp = (ts) => {
+  if (!ts) return ''
+  const date = ts.toDate ? ts.toDate() : new Date(ts)
+  return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ' ' + date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
 }
 
 // --- Chart Data ---
@@ -545,7 +484,23 @@ const darkTooltip = {
   padding: 10,
   cornerRadius: 8,
   titleFont: { size: 12, weight: 600 },
-  bodyFont: { size: 11 }
+  bodyFont: { size: 11 },
+  callbacks: {
+    label: (ctx) => {
+      const val = ctx.parsed.y ?? ctx.parsed
+      return `${ctx.dataset.label || ctx.label}: ${Number(val).toLocaleString('th-TH')} บาท`
+    }
+  }
+}
+
+const darkTooltipCount = {
+  ...darkTooltip,
+  callbacks: {
+    label: (ctx) => {
+      const val = ctx.parsed ?? ctx.raw
+      return `${ctx.label}: ${val} รายการ`
+    }
+  }
 }
 
 const darkLegend = {
@@ -560,118 +515,94 @@ const darkLegend = {
 
 const darkGridColor = 'rgba(58, 59, 62, 0.25)'
 
-// Chart 1: Leave Days by Type (Doughnut)
-const typeChartData = computed(() => {
-  const types = leaveStore.leaveTypes
+const statusAmountChartData = computed(() => {
+  const active = allStatuses.filter(s => summaryByStatus.value[s]?.amount > 0)
   return {
-    labels: types.map(t => t.label),
+    labels: active.map(s => getStatusInfo(s).label),
     datasets: [{
-      data: types.map(t => summaryByType.value[t.value]?.days || 0),
-      backgroundColor: types.map(t => t.color + 'cc'),
-      borderColor: types.map(t => t.color),
+      data: active.map(s => summaryByStatus.value[s].amount),
+      backgroundColor: active.map(s => (getStatusInfo(s).color) + 'cc'),
+      borderColor: active.map(s => getStatusInfo(s).color),
       borderWidth: 2,
       hoverOffset: 6
     }]
   }
 })
 
-// Chart 2: Monthly Leave Trend (Stacked Bar)
 const monthlyChartData = computed(() => {
-  const monthBuckets = {}
-  for (let i = 0; i < 12; i++) {
-    monthBuckets[i] = { sick: 0, personal: 0, vacation: 0, maternity: 0, unpaid: 0, other: 0 }
+  const buckets = Array.from({ length: 12 }, () => 0)
+  for (const exp of reportExpenses.value) {
+    if (exp.status === 'rejected' || exp.status === 'cancelled') continue
+    if (!exp.submittedAt) continue
+    const date = exp.submittedAt.toDate ? exp.submittedAt.toDate() : new Date(exp.submittedAt)
+    const month = date.getMonth()
+    buckets[month] += exp.totalAmount || 0
   }
-  for (const leave of reportLeaves.value) {
-    if (leave.status === 'rejected' || leave.status === 'cancelled') continue
-    if (!leave.startDate) continue
-    const month = parseInt(leave.startDate.split('-')[1], 10) - 1
-    const type = leave.leaveType
-    if (monthBuckets[month] && type in monthBuckets[month]) {
-      const days = leave.totalDays != null ? leave.totalDays : leaveStore.calcBusinessDays(leave.startDate, leave.endDate)
-      monthBuckets[month][type] += days
-    }
-  }
-  const types = leaveStore.leaveTypes
   return {
     labels: monthLabels,
-    datasets: types.map(t => ({
-      label: t.label,
-      data: Array.from({ length: 12 }, (_, i) => Math.round((monthBuckets[i][t.value] || 0) * 100) / 100),
-      backgroundColor: t.color + 'aa',
-      borderColor: t.color,
+    datasets: [{
+      label: 'ยอดเบิก',
+      data: buckets.map(v => Math.round(v * 100) / 100),
+      backgroundColor: '#66bb6aaa',
+      borderColor: '#66bb6a',
       borderWidth: 1,
       borderRadius: 4,
       maxBarThickness: 28
-    }))
+    }]
   }
 })
 
-// Chart 3: Status Distribution (Doughnut)
-const statusChartData = computed(() => {
-  const allStatuses = ['approved', 'pending_head', 'pending_hr', 'rejected', 'cancelled']
-  const counts = {}
-  for (const leave of reportLeaves.value) {
-    counts[leave.status] = (counts[leave.status] || 0) + 1
-  }
-  const activeStatuses = allStatuses.filter(s => counts[s])
+const statusCountChartData = computed(() => {
+  const active = allStatuses.filter(s => summaryByStatus.value[s]?.count > 0)
   return {
-    labels: activeStatuses.map(s => leaveStore.statusLabels[s]?.label || s),
+    labels: active.map(s => getStatusInfo(s).label),
     datasets: [{
-      data: activeStatuses.map(s => counts[s] || 0),
-      backgroundColor: activeStatuses.map(s => (leaveStore.statusLabels[s]?.color || '#9e9e9e') + 'cc'),
-      borderColor: activeStatuses.map(s => leaveStore.statusLabels[s]?.color || '#9e9e9e'),
+      data: active.map(s => summaryByStatus.value[s].count),
+      backgroundColor: active.map(s => (getStatusInfo(s).color) + 'cc'),
+      borderColor: active.map(s => getStatusInfo(s).color),
       borderWidth: 2,
       hoverOffset: 6
     }]
   }
 })
 
-// Chart 4: Dept ranking OR individual quota usage
 const fourthChartData = computed(() => {
-  if (mode.value === 'individual' && individualQuota.value) {
-    // Quota usage bars (used vs remaining) — only for quota-based types
-    const quotaTypes = leaveStore.leaveTypes.filter(t => !leaveStore.noQuotaTypes.includes(t.value))
+  if (mode.value === 'individual') {
+    const buckets = Array.from({ length: 12 }, () => 0)
+    for (const exp of reportExpenses.value) {
+      if (exp.status === 'rejected' || exp.status === 'cancelled') continue
+      if (!exp.submittedAt) continue
+      const date = exp.submittedAt.toDate ? exp.submittedAt.toDate() : new Date(exp.submittedAt)
+      buckets[date.getMonth()] += exp.totalAmount || 0
+    }
     return {
-      labels: quotaTypes.map(t => t.label),
-      datasets: [
-        {
-          label: 'ใช้ไปแล้ว',
-          data: quotaTypes.map(t => summaryByType.value[t.value]?.days || 0),
-          backgroundColor: quotaTypes.map(t => t.color + 'aa'),
-          borderColor: quotaTypes.map(t => t.color),
-          borderWidth: 1,
-          borderRadius: 4,
-          maxBarThickness: 32
-        },
-        {
-          label: 'คงเหลือ',
-          data: quotaTypes.map(t => Math.max(0, (individualQuota.value[t.value] || 0) - (summaryByType.value[t.value]?.days || 0))),
-          backgroundColor: 'rgba(58, 59, 62, 0.4)',
-          borderColor: 'rgba(58, 59, 62, 0.6)',
-          borderWidth: 1,
-          borderRadius: 4,
-          maxBarThickness: 32
-        }
-      ]
+      labels: monthLabels,
+      datasets: [{
+        label: 'ยอดเบิก',
+        data: buckets.map(v => Math.round(v * 100) / 100),
+        backgroundColor: '#66bb6aaa',
+        borderColor: '#66bb6a',
+        borderWidth: 1,
+        borderRadius: 4,
+        maxBarThickness: 28
+      }]
     }
   }
 
-  // Department ranking (top 10)
   const deptMap = {}
-  for (const leave of reportLeaves.value) {
-    if (leave.status === 'rejected' || leave.status === 'cancelled') continue
-    const dept = leave.department || 'ไม่ระบุแผนก'
-    const days = leave.totalDays != null ? leave.totalDays : leaveStore.calcBusinessDays(leave.startDate, leave.endDate)
-    deptMap[dept] = (deptMap[dept] || 0) + days
+  for (const exp of reportExpenses.value) {
+    if (exp.status === 'rejected' || exp.status === 'cancelled') continue
+    const dept = exp.department || 'ไม่ระบุแผนก'
+    deptMap[dept] = (deptMap[dept] || 0) + (exp.totalAmount || 0)
   }
   const sorted = Object.entries(deptMap).sort((a, b) => b[1] - a[1]).slice(0, 10)
   return {
     labels: sorted.map(([dept]) => dept),
     datasets: [{
-      label: 'จำนวนวันลา',
-      data: sorted.map(([, days]) => Math.round(days * 100) / 100),
-      backgroundColor: '#ff8a65aa',
-      borderColor: '#ff8a65',
+      label: 'ยอดเบิก (บาท)',
+      data: sorted.map(([, amt]) => Math.round(amt * 100) / 100),
+      backgroundColor: '#66bb6aaa',
+      borderColor: '#66bb6a',
       borderWidth: 1,
       borderRadius: 4,
       maxBarThickness: 28
@@ -679,7 +610,6 @@ const fourthChartData = computed(() => {
   }
 })
 
-// Chart Options
 const doughnutOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -690,7 +620,17 @@ const doughnutOptions = computed(() => ({
   }
 }))
 
-const stackedBarOptions = computed(() => ({
+const doughnutCountOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '55%',
+  plugins: {
+    legend: { ...darkLegend, position: 'bottom' },
+    tooltip: darkTooltipCount
+  }
+}))
+
+const barOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -699,16 +639,14 @@ const stackedBarOptions = computed(() => ({
   },
   scales: {
     x: {
-      stacked: true,
       ticks: { color: '#6b6c6f', font: { size: 10 } },
       grid: { color: darkGridColor }
     },
     y: {
-      stacked: true,
       beginAtZero: true,
       ticks: { color: '#6b6c6f', font: { size: 10 } },
       grid: { color: darkGridColor },
-      title: { display: true, text: 'วัน', color: '#6b6c6f', font: { size: 10 } }
+      title: { display: true, text: 'บาท', color: '#6b6c6f', font: { size: 10 } }
     }
   }
 }))
@@ -718,23 +656,17 @@ const horizontalBarOptions = computed(() => ({
   maintainAspectRatio: false,
   indexAxis: mode.value === 'individual' ? 'x' : 'y',
   plugins: {
-    legend: {
-      ...darkLegend,
-      position: 'top',
-      display: mode.value === 'individual'
-    },
+    legend: { ...darkLegend, position: 'top', display: false },
     tooltip: darkTooltip
   },
   scales: {
     x: {
       beginAtZero: true,
-      stacked: mode.value === 'individual',
       ticks: { color: '#6b6c6f', font: { size: 10 } },
       grid: { color: darkGridColor },
-      ...(mode.value !== 'individual' && { title: { display: true, text: 'วัน', color: '#6b6c6f', font: { size: 10 } } })
+      ...(mode.value !== 'individual' && { title: { display: true, text: 'บาท', color: '#6b6c6f', font: { size: 10 } } })
     },
     y: {
-      stacked: mode.value === 'individual',
       ticks: { color: '#6b6c6f', font: { size: 10 } },
       grid: { color: darkGridColor }
     }
@@ -743,30 +675,27 @@ const horizontalBarOptions = computed(() => ({
 
 // --- Export ---
 const exportToExcel = () => {
-  if (!reportLeaves.value || reportLeaves.value.length === 0) return
+  if (!reportExpenses.value || reportExpenses.value.length === 0) return
 
-  const rows = reportLeaves.value.map(leave => {
-    const typeInfo = getTypeInfo(leave.leaveType)
-    const statusInfo = getStatusInfo(leave.status)
-    const days = getDisplayDays(leave)
-    const submitted = leave.submittedAt
-      ? (leave.submittedAt.toDate ? leave.submittedAt.toDate() : new Date(leave.submittedAt))
+  const rows = reportExpenses.value.map(exp => {
+    const statusInfo = getStatusInfo(exp.status)
+    const submitted = exp.submittedAt
+      ? (exp.submittedAt.toDate ? exp.submittedAt.toDate() : new Date(exp.submittedAt))
       : null
+    const itemDescs = (exp.items || []).map(i => `${i.description} (${formatAmount(i.amount)}฿)`).join(', ')
 
     return {
-      'ชื่อ-นามสกุล': `${leave.firstName || ''} ${leave.lastName || ''}`.trim(),
-      'แผนก': leave.department || '',
-      'ประเภทการลา': typeInfo.label,
-      'ช่วงเวลา': getDurationLabel(leave) || 'เต็มวัน',
-      'วันที่เริ่ม': leave.startDate || '',
-      'วันที่สิ้นสุด': leave.endDate || '',
-      'ชั่วโมง': leave.totalHours ?? '',
-      'จำนวนวัน': days,
-      'เหตุผล': leave.details || '',
+      'ชื่อ-นามสกุล': `${exp.firstName || ''} ${exp.lastName || ''}`.trim(),
+      'แผนก': exp.department || '',
+      'รายการเบิก': itemDescs,
+      'จำนวนรายการ': exp.items?.length || 0,
+      'ยอดรวม (บาท)': exp.totalAmount || 0,
+      'หมายเหตุ': exp.note || '',
       'สถานะ': statusInfo.label,
-      'หัวหน้าอนุมัติ': leave.headApproval?.approvedByName || '-',
-      'HR อนุมัติ': leave.hrApproval?.approvedByName || '-',
-      'เหตุผลที่ไม่อนุมัติ': leave.rejectionReason || '-',
+      'HR ตรวจสอบ': exp.hrReviewedByName || '-',
+      'วิธีจ่าย': exp.paymentMethod === 'transfer' ? 'โอน' : exp.paymentMethod === 'cash' ? 'เงินสด' : '-',
+      'จ่ายโดย': exp.paidByName || '-',
+      'เหตุผลที่ไม่อนุมัติ': exp.rejectionReason || '-',
       'วันที่ส่ง': submitted ? submitted.toLocaleDateString('th-TH') + ' ' + submitted.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''
     }
   })
@@ -774,17 +703,17 @@ const exportToExcel = () => {
   const ws = XLSX.utils.json_to_sheet(rows)
   const colWidths = Object.keys(rows[0]).map(key => {
     const maxLen = Math.max(key.length, ...rows.map(r => String(r[key] || '').length))
-    return { wch: Math.min(maxLen + 2, 40) }
+    return { wch: Math.min(maxLen + 2, 50) }
   })
   ws['!cols'] = colWidths
 
   const wb = XLSX.utils.book_new()
   const modeLabel = mode.value === 'individual' ? 'รายบุคคล' : mode.value === 'department' ? 'รายแผนก' : 'ทั้งหมด'
-  XLSX.utils.book_append_sheet(wb, ws, `รายงานการลา ${modeLabel}`)
+  XLSX.utils.book_append_sheet(wb, ws, `รายงานการเบิก ${modeLabel}`)
 
   const today = new Date().toISOString().slice(0, 10)
   const { startDate: sd, endDate: ed } = getEffectiveDateRange()
-  XLSX.writeFile(wb, `leave-report-${mode.value}-${sd}_${ed}-${today}.xlsx`)
+  XLSX.writeFile(wb, `expense-report-${mode.value}-${sd}_${ed}-${today}.xlsx`)
 }
 </script>
 
@@ -818,8 +747,8 @@ const exportToExcel = () => {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: rgba(255, 138, 101, 0.12);
-  color: #ff8a65;
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -869,8 +798,8 @@ const exportToExcel = () => {
 .report-view-btn:hover { color: #9e9e9e; }
 
 .report-view-active {
-  background: rgba(66, 165, 245, 0.12);
-  color: #42a5f5;
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
 }
 
 .report-export-btn {
@@ -918,8 +847,8 @@ const exportToExcel = () => {
 }
 
 .report-count-badge {
-  background: rgba(66, 165, 245, 0.15) !important;
-  color: #42a5f5 !important;
+  background: rgba(102, 187, 106, 0.15) !important;
+  color: #66bb6a !important;
   font-size: 0.58rem !important;
 }
 
@@ -982,27 +911,27 @@ const exportToExcel = () => {
 .report-mode-btn:hover { color: #9e9e9e; }
 
 .report-mode-active {
-  background: rgba(255, 138, 101, 0.12);
-  color: #ff8a65;
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
 }
 
 .report-select {
   min-width: 180px;
 }
 
-.report-select .q-field__control {
+.report-select :deep(.q-field__control) {
   background: rgba(30, 33, 36, 0.6) !important;
   border: 1px solid rgba(58, 59, 62, 0.4) !important;
   border-radius: 8px !important;
   min-height: 36px !important;
 }
 
-.report-select .q-field__control::before,
-.report-select .q-field__control::after {
+.report-select :deep(.q-field__control::before),
+.report-select :deep(.q-field__control::after) {
   border: none !important;
 }
 
-.report-select .q-field__native {
+.report-select :deep(.q-field__native) {
   color: #cecfd2 !important;
   font-size: 0.8rem !important;
 }
@@ -1028,7 +957,7 @@ const exportToExcel = () => {
   padding: 8px 20px;
   border-radius: 8px;
   border: none;
-  background: linear-gradient(135deg, #ff8a65 0%, #ef6c00 100%);
+  background: linear-gradient(135deg, #66bb6a 0%, #388e3c 100%);
   color: white;
   font-size: 0.8rem;
   font-weight: 600;
@@ -1039,7 +968,7 @@ const exportToExcel = () => {
 
 .report-fetch-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 138, 101, 0.3);
+  box-shadow: 0 4px 12px rgba(102, 187, 106, 0.3);
 }
 
 .report-fetch-btn:disabled {
@@ -1068,8 +997,6 @@ const exportToExcel = () => {
   gap: 6px;
   margin-bottom: 10px;
 }
-
-.report-summary-icon { font-size: 1rem; }
 
 .report-summary-label {
   font-size: 0.75rem;
@@ -1120,74 +1047,6 @@ const exportToExcel = () => {
   transition: width 0.4s ease;
 }
 
-.report-quota-info {
-  font-size: 0.62rem;
-  color: #6b6c6f;
-  margin-bottom: 4px;
-}
-
-.report-quota-sep {
-  margin: 0 4px;
-  color: #3a3b3e;
-}
-
-.report-quota-warning {
-  color: #ef5350;
-  font-weight: 600;
-}
-
-/* ====== Status Card ====== */
-.report-status-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.report-status-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-
-.report-status-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-}
-
-.report-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.report-status-label {
-  color: #9e9e9e;
-  flex: 1;
-}
-
-.report-status-count {
-  font-weight: 700;
-  color: #cecfd2;
-}
-
-.report-total-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(58, 59, 62, 0.2);
-  font-size: 0.7rem;
-  color: #6b6c6f;
-}
-
-.report-total-row strong {
-  color: #cecfd2;
-}
-
 /* ====== Detail List ====== */
 .report-detail-list {
   max-height: calc(100vh - 200px);
@@ -1223,12 +1082,12 @@ const exportToExcel = () => {
   color: #e0e1e4;
 }
 
-.report-duration-badge {
+.report-items-badge {
   display: inline-flex;
   padding: 1px 7px;
   border-radius: 4px;
-  background: rgba(66, 165, 245, 0.12);
-  color: #42a5f5;
+  background: rgba(102, 187, 106, 0.12);
+  color: #66bb6a;
   font-size: 0.58rem;
   font-weight: 600;
 }
@@ -1266,18 +1125,41 @@ const exportToExcel = () => {
   gap: 4px;
 }
 
-.report-detail-days {
-  font-weight: 700;
-  color: #cecfd2;
-  font-size: 0.68rem;
-}
-
 .report-detail-dept {
   display: flex;
   align-items: center;
   gap: 3px;
   color: #6b6c6f;
   font-size: 0.65rem;
+}
+
+.report-expense-items {
+  margin: 6px 0;
+  padding: 8px 12px;
+  background: rgba(36, 37, 40, 0.4);
+  border-radius: 8px;
+}
+
+.report-expense-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 0.68rem;
+}
+
+.report-expense-item-row + .report-expense-item-row {
+  border-top: 1px solid rgba(58, 59, 62, 0.15);
+}
+
+.report-expense-item-desc {
+  color: #9e9e9e;
+}
+
+.report-expense-item-amount {
+  color: #cecfd2;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .report-detail-reason {

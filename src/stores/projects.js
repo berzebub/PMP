@@ -124,10 +124,16 @@ export const useProjectsStore = defineStore('projects', () => {
       error.value = null
 
       const projectRef = doc(db, 'projects', projectId)
-      await updateDoc(projectRef, {
-        ...updateData,
-        updatedAt: new Date()
-      })
+      const timestamped = { ...updateData, updatedAt: new Date() }
+      await updateDoc(projectRef, timestamped)
+
+      const idx = projects.value.findIndex(p => p.id === projectId)
+      if (idx !== -1) {
+        projects.value[idx] = { ...projects.value[idx], ...timestamped }
+      }
+      if (currentProject.value?.id === projectId) {
+        currentProject.value = { ...currentProject.value, ...timestamped }
+      }
     } catch (err) {
       error.value = err.message
       throw err
@@ -164,8 +170,17 @@ export const useProjectsStore = defineStore('projects', () => {
       const project = projects.value.find(p => p.id === projectId)
       if (!project) throw new Error('Project not found')
 
+      if (project.members.includes(normalizedEmail)) {
+        throw new Error('สมาชิกนี้อยู่ในโปรเจคแล้ว')
+      }
+
       const updatedMembers = [...project.members, normalizedEmail]
       await updateProject(projectId, { members: updatedMembers })
+
+      project.members = updatedMembers
+      if (currentProject.value?.id === projectId) {
+        currentProject.value = { ...currentProject.value, members: updatedMembers }
+      }
     } catch (err) {
       error.value = err.message
       throw err
@@ -180,6 +195,11 @@ export const useProjectsStore = defineStore('projects', () => {
 
       const updatedMembers = project.members.filter(email => email !== memberEmail)
       await updateProject(projectId, { members: updatedMembers })
+
+      project.members = updatedMembers
+      if (currentProject.value?.id === projectId) {
+        currentProject.value = { ...currentProject.value, members: updatedMembers }
+      }
     } catch (err) {
       error.value = err.message
       throw err

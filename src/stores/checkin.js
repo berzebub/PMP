@@ -176,13 +176,13 @@ export const useCheckinStore = defineStore('checkin', () => {
     return { ...level, level: idx + 1, total, nextLevel, progress }
   })
 
-  // Computed: streak fire tier
+  // Computed: streak fire tier (tier 1-3, single emoji + CSS animation per tier)
   const streakTier = computed(() => {
     const s = currentStreak.value
-    if (s >= 30) return { emoji: '🔥🔥🔥', label: 'Legendary' }
-    if (s >= 7) return { emoji: '🔥🔥', label: 'On Fire' }
-    if (s >= 1) return { emoji: '🔥', label: 'Started' }
-    return { emoji: '', label: '' }
+    if (s >= 30) return { emoji: '🔥', label: 'Legendary', tier: 3 }
+    if (s >= 7) return { emoji: '🔥', label: 'On Fire', tier: 2 }
+    if (s >= 1) return { emoji: '🔥', label: 'Started', tier: 1 }
+    return { emoji: '', label: '', tier: 0 }
   })
 
   // Computed: earned badges

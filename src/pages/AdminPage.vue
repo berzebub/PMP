@@ -650,6 +650,23 @@
               <textarea v-model="notifMessage" class="notif-textarea" rows="4" placeholder="เขียนข้อความที่ต้องการแจ้งเตือน..."></textarea>
             </div>
 
+            <!-- Image Attachment -->
+            <div class="notif-field">
+              <label class="notif-field-label">แนบรูปภาพ (ไม่บังคับ)</label>
+              <div v-if="!notifImagePreview" class="notif-image-picker" @click="$refs.notifImageInput.click()">
+                <q-icon name="add_photo_alternate" size="28px" />
+                <span>คลิกเพื่อเลือกรูปภาพ</span>
+                <span class="notif-image-hint">รองรับ JPG, PNG, GIF, WebP (ไม่เกิน 5MB)</span>
+              </div>
+              <div v-else class="notif-image-preview-wrap">
+                <img :src="notifImagePreview" class="notif-image-preview" />
+                <button class="notif-image-remove-btn" @click="removeNotifImage">
+                  <q-icon name="close" size="16px" />
+                </button>
+              </div>
+              <input ref="notifImageInput" type="file" accept="image/*" style="display: none;" @change="handleNotifImageSelect" />
+            </div>
+
             <!-- Summary Info -->
             <div v-if="notifRecipientSummary" class="notif-summary-info">
               <q-icon name="info" size="16px" />
@@ -746,6 +763,7 @@
                   <div class="confirm-msg-bubble">
                     <div v-if="notifTitle.trim()" class="confirm-msg-title">{{ notifTitle.trim() }}</div>
                     <div class="confirm-msg-text">{{ notifMessage.trim() }}</div>
+                    <img v-if="notifImagePreview" :src="notifImagePreview" class="confirm-msg-image" />
                   </div>
                 </div>
               </div>
@@ -782,6 +800,7 @@
             <div class="notif-history-content">
               <div class="notif-history-msg">{{ item.title || item.message }}</div>
               <div class="notif-history-sub" v-if="item.title && item.message !== item.title">{{ item.message }}</div>
+              <img v-if="item.imageURL" :src="item.imageURL" class="notif-history-img" />
               <div class="notif-history-meta">
                 <span class="notif-history-time">{{ formatBroadcastTime(item.createdAt) }}</span>
               </div>
@@ -976,7 +995,8 @@ import { useNotificationsStore } from 'stores/notifications'
 import { useHolidayStore } from 'stores/holiday'
 import { useAttendanceStore } from 'stores/attendance'
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore'
-import { db } from 'boot/firebase'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db, storage } from 'boot/firebase'
 import * as XLSX from 'xlsx'
 
 const authStore = useAuthStore()
@@ -1450,7 +1470,7 @@ const parsePunchFile = (file) => {
                   day: d + 1,
                   date: `${year}-${String(month).padStart(2, '0')}-${String(d + 1).padStart(2, '0')}`,
                   punchIn: times[0] || null,
-                  punchOut: times[1] || null
+                  punchOut: times.length > 1 ? times[times.length - 1] : null
                 })
               }
             }
@@ -1725,6 +1745,9 @@ const sendingNotif = ref(false)
 const notifSendResult = ref(null)
 const adminBroadcastHistory = ref([])
 const showConfirmDialog = ref(false)
+const notifImageFile = ref(null)
+const notifImagePreview = ref(null)
+const uploadingImage = ref(false)
 
 // Filter users for individual selection
 const filteredNotifUsers = computed(() => {
@@ -1747,6 +1770,31 @@ const toggleUserSelect = (usr) => {
   } else {
     notifSelectedEmails.value.push(email)
   }
+}
+
+const handleNotifImageSelect = (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น')
+    event.target.value = ''
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    alert('ขนาดไฟล์ต้องไม่เกิน 5MB')
+    event.target.value = ''
+    return
+  }
+  notifImageFile.value = file
+  if (notifImagePreview.value) URL.revokeObjectURL(notifImagePreview.value)
+  notifImagePreview.value = URL.createObjectURL(file)
+  event.target.value = ''
+}
+
+const removeNotifImage = () => {
+  if (notifImagePreview.value) URL.revokeObjectURL(notifImagePreview.value)
+  notifImageFile.value = null
+  notifImagePreview.value = null
 }
 
 // Recipient summary text
@@ -1805,24 +1853,37 @@ const confirmAndSendNotif = async () => {
       target = { type: 'individual', emails: [...notifSelectedEmails.value] }
     }
 
+    let imageURL = null
+    if (notifImageFile.value) {
+      uploadingImage.value = true
+      const timestamp = Date.now()
+      const safeName = notifImageFile.value.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `notifications/images/${timestamp}_${safeName}`
+      const fileRef = storageRef(storage, filePath)
+      await uploadBytes(fileRef, notifImageFile.value)
+      imageURL = await getDownloadURL(fileRef)
+      uploadingImage.value = false
+    }
+
     const result = await notificationsStore.sendAdminNotification({
       target,
       title: notifTitle.value.trim() || 'ประกาศจากผู้ดูแลระบบ',
-      message: notifMessage.value.trim()
+      message: notifMessage.value.trim(),
+      imageURL
     })
 
     notifSendResult.value = { success: result.success, total: result.total }
 
-    // Clear form on success
     if (result.success > 0) {
       notifTitle.value = ''
       notifMessage.value = ''
       notifSelectedEmails.value = []
       notifDepartment.value = ''
-      // Refresh history
+      removeNotifImage()
       fetchBroadcastHistory()
     }
   } catch (err) {
+    uploadingImage.value = false
     notifSendResult.value = { success: 0, total: 0, error: err.message || 'เกิดข้อผิดพลาด' }
   } finally {
     sendingNotif.value = false
@@ -3107,6 +3168,71 @@ const formatBroadcastTime = (ts) => {
   color: #4b5563;
 }
 
+.notif-image-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  border-radius: 10px;
+  border: 2px dashed rgba(58, 59, 62, 0.5);
+  background: rgba(22, 24, 26, 0.4);
+  color: #6b6c6f;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notif-image-picker:hover {
+  border-color: rgba(92, 156, 230, 0.4);
+  background: rgba(92, 156, 230, 0.04);
+  color: #8bb8e8;
+}
+
+.notif-image-picker span {
+  font-size: 0.8rem;
+}
+
+.notif-image-hint {
+  font-size: 0.7rem !important;
+  color: #4b5563;
+}
+
+.notif-image-preview-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 260px;
+}
+
+.notif-image-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(58, 59, 62, 0.4);
+}
+
+.notif-image-remove-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.notif-image-remove-btn:hover {
+  background: rgba(220, 60, 60, 0.8);
+}
+
 .notif-summary-info {
   display: flex;
   align-items: center;
@@ -3239,6 +3365,14 @@ const formatBroadcastTime = (ts) => {
   color: #9ca3af;
   margin-top: 4px;
   line-height: 1.4;
+}
+
+.notif-history-img {
+  max-width: 120px;
+  max-height: 80px;
+  border-radius: 6px;
+  margin-top: 6px;
+  object-fit: cover;
 }
 
 .notif-history-meta {
@@ -3736,6 +3870,14 @@ const formatBroadcastTime = (ts) => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.confirm-msg-image {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: 8px;
+  margin-top: 8px;
+  object-fit: cover;
 }
 
 .confirm-dialog-actions {
