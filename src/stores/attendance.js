@@ -258,12 +258,23 @@ export const useAttendanceStore = defineStore('attendance', () => {
     }
   }
 
+  const deleteRecord = async (docId) => {
+    try {
+      await deleteDoc(doc(db, 'attendance', docId))
+      return true
+    } catch (err) {
+      console.error('Error deleting attendance record:', err)
+      return false
+    }
+  }
+
   return {
     loading,
     records,
     error,
     checkDuplicates,
     deleteMonthAttendance,
+    deleteRecord,
     importAttendance,
     fetchMonthlyAttendance,
     fetchAllMonthlyAttendance,

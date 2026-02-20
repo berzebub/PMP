@@ -1,6 +1,6 @@
 {
   "name": "edu-task",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "A Task Management Program",
   "productName": "Task Management Program for Edutech Innovation",
   "author": "Tanin <ber_zebub@hotmail.com>",
@@ -11,7 +11,8 @@
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare",
-    "deploy": "quasar build -m pwa && firebase deploy"
+    "deploy": "quasar build -m pwa && firebase deploy",
+    "gen-audio": "node scripts/generate-audio.mjs"
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
@@ -31,8 +32,10 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.36.0",
     "@quasar/app-vite": "^2.1.0",
     "autoprefixer": "^10.4.2",
+    "firebase-admin": "^13.6.1",
     "postcss": "^8.4.14",
     "workbox-build": "^7.4.0",
     "workbox-cacheable-response": "^7.4.0",

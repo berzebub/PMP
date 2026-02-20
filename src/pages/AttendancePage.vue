@@ -392,6 +392,11 @@
         </div>
 
         <div class="att-edit-actions">
+          <button v-if="editDay?.record?.isManual" class="att-edit-delete-btn" :disabled="editSaving" @click="handleEditDelete">
+            <q-icon name="delete_outline" size="16px" />
+            <span>ลบ</span>
+          </button>
+          <div style="flex: 1;"></div>
           <button class="att-edit-cancel-btn" @click="closeEditDialog">
             <q-icon name="close" size="16px" />
             <span>ยกเลิก</span>
@@ -670,6 +675,21 @@ const handleEditSave = async () => {
     })
   }
 
+  editSaving.value = false
+
+  if (success) {
+    closeEditDialog()
+    await loadData()
+  }
+}
+
+const handleEditDelete = async () => {
+  if (!editDay.value?.record?.id || !editDay.value.record.isManual) return
+  const confirmed = confirm('ต้องการลบรายการนี้ใช่หรือไม่?')
+  if (!confirmed) return
+
+  editSaving.value = true
+  const success = await attendanceStore.deleteRecord(editDay.value.record.id)
   editSaving.value = false
 
   if (success) {
@@ -1603,6 +1623,31 @@ const handleEditSave = async () => {
 }
 
 .att-edit-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.att-edit-delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  background: rgba(239, 83, 80, 0.08);
+  color: #ef5350;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.att-edit-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 83, 80, 0.18);
+  border-color: rgba(239, 83, 80, 0.5);
+}
+
+.att-edit-delete-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }

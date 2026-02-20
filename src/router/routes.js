@@ -33,7 +33,9 @@ const routes = [
       { path: 'games/stack-overflow', component: () => import('pages/StackOverflowPage.vue') },
       { path: 'games/werewolf', component: () => import('pages/WerewolfPage.vue') },
       { path: 'games/uno', component: () => import('pages/UnoPage.vue') },
-      { path: 'games/vocab-battle', component: () => import('pages/VocabBattlePage.vue') }
+      { path: 'games/vocab-battle', component: () => import('pages/VocabBattlePage.vue') },
+      { path: 'games/grammar-battle', component: () => import('pages/GrammarBattlePage.vue') },
+      { path: 'games/cefr-test', component: () => import('pages/CefrTestPage.vue') }
     ]
   },
 

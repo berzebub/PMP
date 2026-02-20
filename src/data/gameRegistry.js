@@ -85,7 +85,34 @@ export const games = [
     controls: 'Tap / Click',
     available: true,
     mode: 'both'
-  }
+  },
+  {
+    id: 'grammar-battle',
+    name: 'Grammar Battle',
+    subtitle: 'CEFR Grammar',
+    description: 'ทดสอบ Grammar ภาษาอังกฤษตาม CEFR Level! เล่นคนเดียวหรือ Battle Royal สูงสุด 30 คน',
+    icon: 'spellcheck',
+    color: '#26a69a',
+    route: '/games/grammar-battle',
+    difficulty: 'ปานกลาง',
+    controls: 'Tap / Click',
+    available: true,
+    mode: 'both'
+  },
+  {
+    id: 'cefr-test',
+    name: 'CEFR Test',
+    subtitle: 'Reading & Listening',
+    description: 'ทดสอบระดับ CEFR ด้วย Reading & Listening 50 นาที แบบ Adaptive Test คล้าย EF SET',
+    icon: 'quiz',
+    color: '#5c6bc0',
+    route: '/games/cefr-test',
+    difficulty: 'ปานกลาง - ยาก',
+    controls: 'Tap / Click',
+    available: true,
+    mode: 'single',
+    noLeaderboard: true,
+  },
   // เพิ่มเกมใหม่ได้ที่นี่ เช่น:
   // {
   //   id: 'flappy-dev',
